@@ -255,8 +255,13 @@ validate_test_values <- function(test_row, history_df = NULL) {
 fit_power_duration_model <- function(profile_long) {
   fit <- lm(log(power_w) ~ log(duration_sec), data = profile_long)
 
+  # Include the 5 test durations in the grid so the curve passes exactly
+  # through 20 min, where the plot switches to the extrapolated style.
   curve_grid <- tibble(
-    duration_sec = exp(seq(log(45), log(3600), length.out = 300))
+    duration_sec = sort(unique(c(
+      exp(seq(log(45), log(3600), length.out = 300)),
+      unname(test_durations)
+    )))
   ) %>%
     mutate(pred_power_w = exp(predict(fit, newdata = .)))
 
@@ -332,12 +337,30 @@ build_prediction_table <- function(model_fit) {
   predict_power_curve(model_fit, prediction_durations) %>%
     transmute(
       duration = duration_label,
-      predicted_power_w = round(predicted_power_w, 0)
+      predicted_power_w = round(predicted_power_w, 0),
+      # Durations past the 20 min test are extrapolations, not interpolations.
+      estimate_type = if_else(
+        duration_sec > max(test_durations),
+        "Extrapolated estimate",
+        "Modeled estimate"
+      )
     )
 }
 
 build_training_targets <- function(pred_table, cp_metrics) {
+  # Look up a predicted power by its duration label, e.g. "4 min".
   lookup <- setNames(pred_table$predicted_power_w, pred_table$duration)
+
+  # Show each anchor as its own value, e.g. "4 min: 352 W". Combining two
+  # anchors into one range would hide that they refer to different durations.
+  # Anchors beyond the 20 min test are marked as extrapolated.
+  format_anchor <- function(label) {
+    is_extrapolated <- prediction_durations[[label]] > max(test_durations)
+    paste0(
+      label, ": ", lookup[[label]], " W",
+      if (is_extrapolated) " (extrapolated)" else ""
+    )
+  }
 
   tibble(
     category = c(
@@ -347,12 +370,19 @@ build_training_targets <- function(pred_table, cp_metrics) {
       "Threshold-focused work",
       "Steady aerobic work"
     ),
-    anchor = c(
-      paste0(lookup[["1 min"]], " to ", lookup[["2 min"]], " W"),
-      paste0(lookup[["2 min"]], " to ", lookup[["4 min"]], " W"),
-      paste0(lookup[["4 min"]], " to ", lookup[["8 min"]], " W"),
-      paste0(lookup[["12 min"]], " to ", lookup[["15 min"]], " W"),
-      paste0(lookup[["30 min"]], " to ", lookup[["60 min"]], " W")
+    anchor_1 = c(
+      format_anchor("1 min"),
+      format_anchor("2 min"),
+      format_anchor("4 min"),
+      format_anchor("12 min"),
+      format_anchor("30 min")
+    ),
+    anchor_2 = c(
+      format_anchor("2 min"),
+      format_anchor("4 min"),
+      format_anchor("8 min"),
+      format_anchor("15 min"),
+      format_anchor("60 min")
     ),
     use_case = c(
       "Hard short repeats with long recovery",
@@ -362,11 +392,11 @@ build_training_targets <- function(pred_table, cp_metrics) {
       "Longer steady sessions and controlled aerobic work"
     ),
     note = c(
-      "Use as a starting range, not a single magic number.",
-      "These efforts are highly fatiguing and sensitive to pacing.",
-      "Choose a repeatable power, not the highest one-off effort.",
-      "This is not a direct threshold diagnosis.",
-      "Keep these practical and repeatable rather than maximal."
+      "A starting reference. Adjust to what you can repeat across the session.",
+      "Highly fatiguing and pacing-sensitive. Adjust to what you can repeat.",
+      "Choose a power you can hold on every repeat.",
+      "An estimated reference for sustained work. It does not identify a physiological threshold.",
+      "Both values extend beyond your 20 min test. Treat them as lower-confidence planning references."
     ),
     cp_context = ifelse(
       is.na(cp_metrics$cp_w),
@@ -734,7 +764,7 @@ ui <- navbarPage(
       mainPanel(
         uiOutput("validation_box"),
         plotOutput("pd_plot", height = "430px"),
-        tags$small("Points = your tested results. Line = fitted profile estimate."),
+        tags$small("Points = your tested results. Solid line = fitted estimate within your tested range. Dashed line = extrapolated estimate beyond 20 min."),
         tags$br(),
         tags$small("A steeper drop from left to right means power falls off faster as duration increases."),
         tags$br(),
@@ -781,7 +811,7 @@ ui <- navbarPage(
       h3("Practical Training Targets"),
       p("These outputs are practical anchors derived from your entered field-test profile."),
       p("They are not direct measurements of lactate threshold, ventilatory thresholds, or exact metabolic zones."),
-      tags$small("These are practical starting ranges derived from your profile."),
+      tags$small("Each category shows 2 anchor durations with an estimated power for each. Treat them as practical starting references derived from your profile."),
       tags$br(),
       tags$small("Use repeatability and workout response to adjust them."),
       tableOutput("training_targets_table")
@@ -927,11 +957,39 @@ server <- function(input, output, session) {
     model_fit <- current_model_fit()
     curve_df <- model_fit$curve
 
+    # The longest test is 20 min (1200 s). Beyond it, the curve is
+    # extrapolation, so it is drawn dashed over a shaded band.
+    longest_test_sec <- max(test_durations)
+    curve_tested <- curve_df %>% filter(duration_sec <= longest_test_sec)
+    curve_extrapolated <- curve_df %>% filter(duration_sec >= longest_test_sec)
+
     ggplot() +
+      annotate(
+        "rect",
+        xmin = longest_test_sec, xmax = Inf,
+        ymin = -Inf, ymax = Inf,
+        fill = "grey92"
+      ) +
+      annotate(
+        "text",
+        x = sqrt(longest_test_sec * 3600),
+        y = Inf,
+        label = "Extrapolated\nbeyond 20 min",
+        vjust = 1.5,
+        size = 3.5,
+        colour = "grey40"
+      ) +
       geom_line(
-        data = curve_df,
+        data = curve_tested,
         aes(x = duration_sec, y = pred_power_w),
         linewidth = 1
+      ) +
+      geom_line(
+        data = curve_extrapolated,
+        aes(x = duration_sec, y = pred_power_w),
+        linewidth = 1,
+        linetype = "dashed",
+        colour = "grey45"
       ) +
       geom_point(
         data = profile_df,
@@ -1203,7 +1261,13 @@ server <- function(input, output, session) {
       need(length(current_validation()$errors) == 0, "Fix the blocking issues to generate training targets.")
     )
     current_training_targets() %>%
-      select(category, anchor, use_case, note)
+      transmute(
+        Category = category,
+        `First anchor` = anchor_1,
+        `Second anchor` = anchor_2,
+        Use = use_case,
+        Note = note
+      )
   }, striped = TRUE, bordered = TRUE, spacing = "s")
 }
 
