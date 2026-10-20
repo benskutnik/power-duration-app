@@ -48,8 +48,10 @@ The app stores nothing between sessions. Download your history CSV from the Impo
 ## Project documents
 
 - `CHANGELOG.md`: changes users will notice, by version.
-- `docs/DECISIONS.md`: design decisions and the reasoning behind them.
 - `docs/`: the planning documents and the scientific bibliography.
+- `docs/DECISIONS.md`: design decisions and the reasoning behind them.
+- `docs/RELEASING.md`: how changes get from a branch to the live app.
+- `tests/test_app.R`: automated checks to run before each release.
 
 ## Status
 
