@@ -150,17 +150,21 @@ empty_history <- function() {
   )
 }
 
+# The example upload file shows every column a user can edit (D-012).
 build_example_upload_csv <- function() {
   tibble(
     athlete_name = "Sample Athlete",
-    test_date = as.Date("2026-03-01"),
+    test_date = as.Date("2026-03-02"),
     power_45s = 620,
     power_3min = 410,
     power_6min = 360,
     power_10min = 330,
     power_20min = 295,
     ergometer_type = "Concept2 BikeErg",
-    notes = "Example row for upload formatting. Replace with your own values."
+    protocol_confirmed = TRUE,
+    test_validity_flag = "Complete",
+    context_flags = "Poor sleep",
+    notes = "Example row. Replace with your own values. Separate multiple context flags with a semicolon."
   )
 }
 
@@ -233,6 +237,45 @@ split_context_flags <- function(x) {
   if (length(x) == 0 || is.na(x) || x == "") return(character())
   parts <- trimws(strsplit(as.character(x), ";")[[1]])
   parts[parts != ""]
+}
+
+
+# Parsers for uploaded CSV values (D-012). Each returns a clean value, or NA
+# (NULL for context flags) when a value isn't recognized, so the row can be
+# reported by number.
+
+# Dates are accepted as 2026-03-02 or 3/2/2026, since spreadsheet apps often
+# rewrite dates in the second form when saving a CSV.
+parse_upload_date <- function(x) {
+  x <- trimws(as.character(x))
+  if (is.na(x) || x == "") return(as.Date(NA))
+  if (grepl("^\\d{4}-\\d{1,2}-\\d{1,2}", x)) return(as.Date(substr(x, 1, 10), format = "%Y-%m-%d"))
+  if (grepl("^\\d{1,2}/\\d{1,2}/\\d{4}$", x)) return(as.Date(x, format = "%m/%d/%Y"))
+  if (grepl("^\\d{1,2}/\\d{1,2}/\\d{2}$", x)) return(as.Date(x, format = "%m/%d/%y"))
+  as.Date(NA)
+}
+
+parse_protocol_confirmed <- function(x) {
+  x <- tolower(trimws(as.character(x)))
+  if (is.na(x) || x == "") return(FALSE)
+  if (x %in% c("true", "yes", "1")) return(TRUE)
+  if (x %in% c("false", "no", "0")) return(FALSE)
+  NA
+}
+
+parse_validity_flag <- function(x) {
+  x <- trimws(as.character(x))
+  if (is.na(x) || x == "") return("Complete")
+  allowed <- c("Complete", "Compromised", "Retest needed")
+  hit <- allowed[tolower(allowed) == tolower(x)]
+  if (length(hit) == 1) hit else NA_character_
+}
+
+parse_context_flags <- function(x) {
+  parts <- split_context_flags(x)
+  known <- names(context_flag_levels)
+  matched <- known[match(tolower(parts), tolower(known))]
+  if (any(is.na(matched))) NULL else matched
 }
 
 # The baseline for history checks and comparisons is the most recent earlier
@@ -693,7 +736,7 @@ recompute_history_record <- function(row, history_df = empty_history()) {
     power_20min = as.numeric(row$power_20min),
     notes = if ("notes" %in% names(row)) as.character(row$notes) else "",
     ergometer_type = if ("ergometer_type" %in% names(row)) as.character(row$ergometer_type) else "",
-    protocol_confirmed = if ("protocol_confirmed" %in% names(row)) as.logical(row$protocol_confirmed) else TRUE,
+    protocol_confirmed = if ("protocol_confirmed" %in% names(row)) as.logical(row$protocol_confirmed) else FALSE,
     test_validity_flag = if ("test_validity_flag" %in% names(row)) as.character(row$test_validity_flag) else "Complete",
     context_flags = if ("context_flags" %in% names(row) && !is.na(row$context_flags)) as.character(row$context_flags) else ""
   )
@@ -753,56 +796,127 @@ upsert_history_record <- function(history_df, record) {
   recompute_uploaded_history(bind_rows(kept, record))
 }
 
+# Read an uploaded history CSV. Every column is read as text first, so each
+# value can be checked and reported by row number before anything is used.
 read_history_csv <- function(path) {
-  raw <- read_csv(path, show_col_types = FALSE)
+  raw <- read_csv(path, col_types = cols(.default = col_character()), show_col_types = FALSE)
   validate_history_file(raw)
 }
 
+# Validate an uploaded history file (D-012). Returns the recomputed history
+# and the number of rows imported as compromised. Any problem stops the
+# upload with a message naming the rows, and existing history is unchanged.
 validate_history_file <- function(df) {
   missing_required <- setdiff(history_required_cols, names(df))
   if (length(missing_required) > 0) {
-    stop(
-      paste0(
-        "Uploaded CSV is missing required columns: ",
-        paste(missing_required, collapse = ", ")
-      )
-    )
+    stop(paste0("The file is missing required columns: ", paste(missing_required, collapse = ", "), "."))
   }
 
-  out <- df %>%
-    mutate(
-      test_date = as.Date(test_date),
-      power_45s = as.numeric(power_45s),
-      power_3min = as.numeric(power_3min),
-      power_6min = as.numeric(power_6min),
-      power_10min = as.numeric(power_10min),
-      power_20min = as.numeric(power_20min),
-      protocol_confirmed = if ("protocol_confirmed" %in% names(.)) as.logical(protocol_confirmed) else TRUE
-    ) %>%
-    arrange(test_date)
+  if (nrow(df) == 0) {
+    stop("The file has no test rows.")
+  }
 
-  for (col in setdiff(names(empty_history()), names(out))) {
-    template_col <- empty_history()[[col]]
+  # Optional columns may be absent; treat them as blank.
+  optional_text <- function(col) {
+    if (col %in% names(df)) df[[col]] else rep(NA_character_, nrow(df))
+  }
 
-    if (inherits(template_col, "Date")) {
-      out[[col]] <- as.Date(rep(NA_character_, nrow(out)))
-    } else if (is.logical(template_col)) {
-      out[[col]] <- rep(NA, nrow(out))
-    } else if (is.numeric(template_col)) {
-      out[[col]] <- rep(NA_real_, nrow(out))
-    } else {
-      out[[col]] <- rep(NA_character_, nrow(out))
+  problems <- character()
+  rows <- vector("list", nrow(df))
+  keys <- rep(NA_character_, nrow(df))
+  n_compromised <- 0
+
+  for (i in seq_len(nrow(df))) {
+    row_problems <- character()
+
+    raw_date <- df$test_date[i]
+    test_date <- parse_upload_date(raw_date)
+    date_unreadable <- !is.na(raw_date) && trimws(raw_date) != "" && is.na(test_date)
+    if (date_unreadable) {
+      row_problems <- c(row_problems, paste0("test_date \"", raw_date, "\" isn't a date like 2026-03-02 or 3/2/2026"))
     }
+
+    protocol <- parse_protocol_confirmed(optional_text("protocol_confirmed")[i])
+    validity <- parse_validity_flag(optional_text("test_validity_flag")[i])
+    flags <- parse_context_flags(optional_text("context_flags")[i])
+
+    if (is.na(protocol)) row_problems <- c(row_problems, "protocol_confirmed must be TRUE/FALSE, yes/no, or 1/0")
+    if (is.na(validity)) row_problems <- c(row_problems, "test_validity_flag must be Complete, Compromised, or Retest needed")
+    if (is.null(flags)) row_problems <- c(row_problems, "context_flags contains an unrecognized flag")
+
+    equipment <- match_equipment(optional_text("ergometer_type")[i])
+    notes <- optional_text("notes")[i]
+
+    test_row <- tibble(
+      athlete_name = trimws(df$athlete_name[i]),
+      test_date = test_date,
+      power_45s = suppressWarnings(as.numeric(df$power_45s[i])),
+      power_3min = suppressWarnings(as.numeric(df$power_3min[i])),
+      power_6min = suppressWarnings(as.numeric(df$power_6min[i])),
+      power_10min = suppressWarnings(as.numeric(df$power_10min[i])),
+      power_20min = suppressWarnings(as.numeric(df$power_20min[i])),
+      notes = if (is.na(notes)) "" else notes,
+      ergometer_type = if (equipment == "Not specified") "" else equipment,
+      protocol_confirmed = isTRUE(protocol),
+      test_validity_flag = if (is.na(validity)) "Complete" else validity,
+      context_flags = if (is.null(flags)) "" else paste(flags, collapse = "; ")
+    )
+
+    # Hard input errors reject the file (D-006). The validator's messages end
+    # with periods, which are dropped so they join cleanly with "; ".
+    check <- validate_test_values(test_row)
+    input_errors <- check$errors
+    if (date_unreadable) {
+      input_errors <- input_errors[input_errors != "Testing block start date is required."]
+    }
+    row_problems <- c(row_problems, sub("\\.$", "", input_errors))
+
+    if (!is.na(test_row$athlete_name) && test_row$athlete_name != "" && !is.na(test_row$test_date)) {
+      keys[i] <- make_profile_key(test_row$athlete_name, test_row$test_date)
+    }
+
+    # Spreadsheet row numbers: row 1 is the header, so data starts at row 2.
+    if (length(row_problems) > 0) {
+      problems <- c(problems, paste0("Row ", i + 1, ": ", paste(row_problems, collapse = "; "), "."))
+      next
+    }
+
+    # Ordering failures and likely entry errors import as compromised (D-012).
+    if (check$has_pattern_block && test_row$test_validity_flag == "Complete") {
+      test_row$test_validity_flag <- "Compromised"
+      n_compromised <- n_compromised + 1
+    }
+
+    rows[[i]] <- test_row
   }
 
-  out <- out %>%
-    select(all_of(names(empty_history())))
+  for (k in unique(keys[!is.na(keys) & duplicated(keys)])) {
+    problems <- c(problems, paste0(
+      "Rows ", paste(which(keys == k) + 1, collapse = " and "),
+      ": same athlete and start date. Each athlete and start date can appear only once."
+    ))
+  }
 
-  recompute_uploaded_history(out)
+  if (length(problems) > 0) {
+    shown <- head(problems, 5)
+    more <- length(problems) - length(shown)
+    stop(paste0(
+      "The file wasn't uploaded, and your current history is unchanged. ",
+      paste(shown, collapse = " | "),
+      if (more > 0) paste0(" | ...and ", more, " more.") else ""
+    ))
+  }
+
+  list(
+    history = recompute_uploaded_history(bind_rows(rows)),
+    n_compromised = n_compromised
+  )
 }
 
+# Empty values are written as blank cells, which read cleanly in a
+# spreadsheet and come back as empty on upload.
 write_history_csv <- function(history_df, file) {
-  write_csv(history_df, file)
+  write_csv(history_df, file, na = "")
 }
 
 prepare_history_trend_data <- function(history_df) {
@@ -1042,23 +1156,23 @@ ui <- navbarPage(
     "Import / Export",
     fluidPage(
       h3("CSV Import and Export"),
-      p(strong("Important: This app does not store your data between sessions.")),
-      p("If you want to track your progress over time, download your history and re-upload it when you return."),
-      helpText("Workflow: Download your history -> save it -> upload it next time -> add your new test."),
-      p("Use CSV files to replace the current session history or download your saved history."),
-      p("Download the example CSV if you want a correctly formatted file to edit and upload."),
-      helpText("The example file includes the fields you should manage directly, including ergometer type. The app calculates derived values after upload."),
-      p(strong("About the downloaded CSV")),
-      p("The downloaded file includes your original test data and additional calculated values."),
-      p("You only need to edit the core input fields: athlete name, testing block start date (the test_date column), power values, ergometer type, and notes."),
-      p("All other fields will be recalculated automatically when you upload the file."),
-      helpText("If you are unsure, start from the Example CSV instead of editing a previous download."),
-      p("Required columns: athlete_name, test_date, power_45s, power_3min, power_6min, power_10min, power_20min."),
+      p(strong("This app does not store your data between sessions.")),
+      p("To track progress over time, download your history before closing, then upload it when you return. Uploading replaces the current session history."),
+      h4("Columns"),
+      p("Required: athlete_name, test_date (your testing block start date), power_45s, power_3min, power_6min, power_10min, power_20min."),
+      p("Optional: ergometer_type, protocol_confirmed (TRUE or FALSE), test_validity_flag (Complete, Compromised, or Retest needed), context_flags (separate several with a semicolon), and notes. Equipment names that don't match the app's list are saved as Other."),
+      p("Dates can be written as 2026-03-02 or 3/2/2026. Calculated columns in a downloaded file are ignored and recalculated on upload."),
+      h4("What the upload checks"),
+      tags$ul(
+        tags$li("Each athlete and start date can appear only once."),
+        tags$li("A row with a missing or invalid value stops the upload, and the message names the row. Your current history stays as it was."),
+        tags$li("A row whose values break the expected order, or look like an entry error, is imported as a compromised record.")
+      ),
+      helpText("If you're unsure of the format, start from the Example CSV."),
       fluidRow(
         column(
           width = 6,
-          fileInput("upload_history", "Upload history CSV", accept = ".csv"),
-          helpText("In version 1, uploading a CSV replaces the current in-session history.")
+          fileInput("upload_history", "Upload history CSV", accept = ".csv")
         ),
         column(
           width = 6,
@@ -1401,18 +1515,31 @@ server <- function(input, output, session) {
   observeEvent(input$upload_history, {
     req(input$upload_history)
 
+    # Error messages stay open until closed, since they can list several rows.
     uploaded <- tryCatch(
       read_history_csv(input$upload_history$datapath),
       error = function(e) {
-        showNotification(paste("Upload failed:", e$message), type = "error")
-        return(NULL)
+        showNotification(paste("Upload failed:", conditionMessage(e)), type = "error", duration = NULL)
+        NULL
       }
     )
 
     req(!is.null(uploaded))
-    history_data(uploaded)
+    history_data(uploaded$history)
     save_status_message("")
-    showNotification("History uploaded successfully. Session history was replaced.", type = "message")
+
+    n_tests <- nrow(uploaded$history)
+    message <- paste0(
+      "History uploaded: ", n_tests, if (n_tests == 1) " test" else " tests",
+      ". Session history was replaced."
+    )
+    if (uploaded$n_compromised > 0) {
+      message <- paste0(
+        message, " ", uploaded$n_compromised,
+        " with ordering problems or likely entry errors were imported as compromised records."
+      )
+    }
+    showNotification(message, type = "message", duration = 10)
   })
 
   output$save_status <- renderText({

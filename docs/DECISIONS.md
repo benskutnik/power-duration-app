@@ -161,7 +161,7 @@ After any save, replace, delete, or upload, every record's derived fields are re
 
 ## D-012: CSV import
 
-**Date:** 2026-10-19 | **Status:** Decided
+**Date:** 2026-10-19 | **Status:** Implemented (Step 8)
 
 The whole file is validated before history is replaced. Any failure leaves existing history unchanged.
 
@@ -183,6 +183,8 @@ The whole file is validated before history is replaced. Any failure leaves exist
 **Why FALSE for `protocol_confirmed`:** a row that never recorded confirmation shows the minor "protocol unconfirmed" warning, since the app doesn't know. History files exported from V1.0 include the column and keep their values. Unknown values are rejected instead of guessed, because an unknown flag is most likely a typo and dropping it would lose information.
 
 **Example CSV:** the downloadable example includes `protocol_confirmed` and `context_flags`, so users see they exist.
+
+**Dates:** `test_date` is accepted as 2026-03-02, 3/2/2026, or 3/2/26, because spreadsheet apps often rewrite dates in the US format when saving a CSV. Added on 2026-10-20 during implementation.
 
 ## D-013: Athlete key
 

@@ -16,6 +16,8 @@ User-facing changes to the Power-Duration App.
 - Historical Comparison overlays the current profile's curve on the previous comparable test's curve.
 - A checklist on Current Test Entry records conditions that may have affected the testing block, such as illness or poor sleep. Each one raises the retest guidance, and an interrupted or failed effort withholds model outputs.
 - Ergometer is a dropdown of common machines, plus Not specified and Other.
+- Uploads accept dates written as 2026-03-02 or 3/2/2026.
+- Uploaded rows with ordering problems or likely entry errors are imported as compromised records.
 
 ### Changed
 
@@ -34,6 +36,11 @@ User-facing changes to the Power-Duration App.
 - Estimated CP and W′ appear together or not at all.
 - The "I followed the testing protocol closely" box starts unchecked, so confirming it is a deliberate choice.
 - History CSV files include `context_flags` and `retest_level` columns.
+- Uploads check every row before replacing history. A file with missing or invalid values, or a repeated athlete and start date, is rejected with a message naming the rows, and the current history stays as it was.
+- Equipment names in uploaded files are matched to the app's list regardless of capitalization. Unrecognized names are saved as Other.
+- Uploaded rows without a `protocol_confirmed` value are treated as unconfirmed.
+- Downloaded history files leave empty cells blank instead of writing "NA."
+- The example CSV includes every editable column.
 
 ### Removed
 
