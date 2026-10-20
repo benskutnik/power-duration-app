@@ -44,7 +44,7 @@ history_required_cols <- c(
 
 history_optional_cols <- c(
   "notes", "ergometer_type", "protocol_confirmed", "test_validity_flag",
-  "estimated_cp", "estimated_w_prime", "riegel_S", "riegel_E",
+  "estimated_cp", "estimated_w_prime", "power_law_a", "power_law_b",
   "predicted_power_1min", "predicted_power_2min", "predicted_power_4min",
   "predicted_power_8min", "predicted_power_12min", "predicted_power_15min",
   "predicted_power_30min", "predicted_power_60min", "warning_flags",
@@ -70,8 +70,8 @@ empty_history <- function() {
     test_validity_flag = character(),
     estimated_cp = numeric(),
     estimated_w_prime = numeric(),
-    riegel_S = numeric(),
-    riegel_E = numeric(),
+    power_law_a = numeric(),
+    power_law_b = numeric(),
     predicted_power_1min = numeric(),
     predicted_power_2min = numeric(),
     predicted_power_4min = numeric(),
@@ -297,16 +297,7 @@ estimate_secondary_metrics <- function(profile_long) {
   list(cp_w = cp_w, wprime_j = wprime_j)
 }
 
-build_riegel_metrics <- function(model_fit) {
-  tibble(
-    riegel_S = unname(model_fit$a),
-    riegel_E = unname(model_fit$b + 1)
-  )
-}
-
 build_summary_table <- function(test_row, model_fit, cp_metrics, validation_result) {
-  riegel_metrics <- build_riegel_metrics(model_fit)
-
   tibble(
     metric = c(
       "Athlete",
@@ -318,8 +309,6 @@ build_summary_table <- function(test_row, model_fit, cp_metrics, validation_resu
       "20 min power",
       "Estimated critical power",
       "Estimated W′",
-      "Profile Power Level (Riegel S)",
-      "Power-Duration Endurance (Riegel E)",
       "Confidence summary",
       "Retest guidance"
     ),
@@ -333,8 +322,6 @@ build_summary_table <- function(test_row, model_fit, cp_metrics, validation_resu
       paste0(round(test_row$power_20min, 0), " W"),
       ifelse(is.na(cp_metrics$cp_w), "Not available", paste0(round(cp_metrics$cp_w, 0), " W")),
       ifelse(is.na(cp_metrics$wprime_j), "Not available", paste0(round(cp_metrics$wprime_j / 1000, 1), " kJ")),
-      ifelse(is.na(riegel_metrics$riegel_S), "Not available", paste0(round(riegel_metrics$riegel_S, 1), " W")),
-      ifelse(is.na(riegel_metrics$riegel_E), "Not available", format(round(riegel_metrics$riegel_E, 3), nsmall = 3)),
       validation_result$confidence_summary,
       validation_result$retest_level
     )
@@ -404,8 +391,8 @@ make_profile_record <- function(test_row, model_fit, cp_metrics, pred_table, val
     test_validity_flag = test_row$test_validity_flag,
     estimated_cp = cp_metrics$cp_w,
     estimated_w_prime = cp_metrics$wprime_j,
-    riegel_S = model_fit$a,
-    riegel_E = model_fit$b + 1,
+    power_law_a = model_fit$a,
+    power_law_b = model_fit$b,
     predicted_power_1min = pred_table$predicted_power_w[pred_table$duration == "1 min"],
     predicted_power_2min = pred_table$predicted_power_w[pred_table$duration == "2 min"],
     predicted_power_4min = pred_table$predicted_power_w[pred_table$duration == "4 min"],
@@ -563,21 +550,11 @@ build_comparison_table <- function(current_row, history_df) {
   current_vals <- c(current_row$power_45s, current_row$power_3min, current_row$power_6min, current_row$power_10min, current_row$power_20min)
   prior_vals <- c(prior$power_45s, prior$power_3min, prior$power_6min, prior$power_10min, prior$power_20min)
 
-  current_model_fit <- fit_power_duration_model(to_long_profile(current_row))
-  current_riegel <- build_riegel_metrics(current_model_fit)
-
   comparison_rows <- tibble(
     metric = c("45 s power", "3 min power", "6 min power", "10 min power", "20 min power"),
     current_value = current_vals,
     prior_value = prior_vals
   ) %>%
-    bind_rows(
-      tibble(
-        metric = c("Profile Power Level (Riegel S)", "Power-Duration Endurance (Riegel E)"),
-        current_value = c(current_riegel$riegel_S, current_riegel$riegel_E),
-        prior_value = c(prior$riegel_S, prior$riegel_E)
-      )
-    ) %>%
     mutate(
       absolute_change = current_value - prior_value,
       percent_change = if_else(
@@ -585,18 +562,9 @@ build_comparison_table <- function(current_row, history_df) {
         NA_real_,
         100 * absolute_change / prior_value
       ),
-      current_value = case_when(
-        metric == "Power-Duration Endurance (Riegel E)" ~ format(round(current_value, 3), nsmall = 3),
-        TRUE ~ as.character(round(current_value, 0))
-      ),
-      prior_value = case_when(
-        metric == "Power-Duration Endurance (Riegel E)" ~ format(round(prior_value, 3), nsmall = 3),
-        TRUE ~ as.character(round(prior_value, 0))
-      ),
-      absolute_change = case_when(
-        metric == "Power-Duration Endurance (Riegel E)" ~ format(round(absolute_change, 3), nsmall = 3),
-        TRUE ~ as.character(round(absolute_change, 0))
-      ),
+      current_value = as.character(round(current_value, 0)),
+      prior_value = as.character(round(prior_value, 0)),
+      absolute_change = as.character(round(absolute_change, 0)),
       percent_change = if_else(
         is.na(percent_change),
         "NA",
@@ -776,11 +744,7 @@ ui <- navbarPage(
           column(
             6,
             h4("Current Summary"),
-            tags$small("Riegel S describes overall profile power level. Riegel E describes how well power holds up as duration increases."),
-            tableOutput("summary_table"),
-            tags$small("Profile Power Level (Riegel S): Higher = higher overall power level across the profile."),
-            tags$br(),
-            tags$small("Power-Duration Endurance (Riegel E): Higher = less drop-off as duration gets longer.")
+            tableOutput("summary_table")
           ),
           column(6, h4("Predicted Powers"), tableOutput("prediction_table"))
         )
@@ -801,7 +765,7 @@ ui <- navbarPage(
       ),
       br(),
       h3("Current vs Most Recent Saved Test"),
-      tags$small("Compare changes in tested power first. Use Riegel S and Riegel E as summary descriptors, not as stand-alone verdicts."),
+      tags$small("Changes are shown for each of the 5 tested durations."),
       tags$br(),
       tags$small("Small changes may reflect normal test variation. Compare tests done on the same ergometer and under similar conditions."),
       tableOutput("comparison_table"),
@@ -963,14 +927,6 @@ server <- function(input, output, session) {
     model_fit <- current_model_fit()
     curve_df <- model_fit$curve
 
-    riegel_s <- as.numeric(unname(model_fit$a))
-    riegel_e <- as.numeric(unname(model_fit$b + 1))
-
-    annotation_label <- paste0(
-      "S: ", round(riegel_s, 0), " W (overall level)\n",
-      "E: ", round(riegel_e, 3), " (endurance / drop-off)"
-    )
-
     ggplot() +
       geom_line(
         data = curve_df,
@@ -987,16 +943,6 @@ server <- function(input, output, session) {
         aes(x = duration_sec, y = label_y, label = paste0(round(power_w, 0), " W")),
         vjust = -0.7,
         size = 4
-      ) +
-      annotate(
-        "text",
-        x = max(curve_df$duration_sec),
-        y = max(curve_df$pred_power_w),
-        label = annotation_label,
-        hjust = 1.05,
-        vjust = 1.2,
-        size = 4,
-        alpha = 0.8
       ) +
       scale_x_log10(
         breaks = c(45, 180, 360, 600, 1200, 1800, 3600),
@@ -1209,8 +1155,6 @@ server <- function(input, output, session) {
           `10 min` = power_10min,
           `20 min` = power_20min,
           `Estimated CP` = round(estimated_cp, 0),
-          `Profile Power Level (Riegel S)` = round(riegel_S, 0),
-          `Power-Duration Endurance (Riegel E)` = round(riegel_E, 3),
           `Confidence` = confidence_summary
         ),
       options = list(pageLength = 8, scrollX = TRUE),
