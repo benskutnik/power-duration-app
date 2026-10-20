@@ -41,6 +41,7 @@ User-facing changes to the Power-Duration App.
 - Uploaded rows without a `protocol_confirmed` value are treated as unconfirmed.
 - Downloaded history files leave empty cells blank instead of writing "NA."
 - The example CSV includes every editable column.
+- On phone-sized screens, the tabs collapse into a menu button.
 
 ### Removed
 

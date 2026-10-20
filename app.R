@@ -1043,6 +1043,8 @@ protocol_html <- HTML(
 ui <- navbarPage(
   title = "Power-Duration App",
   id = "main_tabs",
+  # On narrow screens, tabs collapse into a menu button instead of stacking.
+  collapsible = TRUE,
 
   tabPanel(
     "Current Test Entry",
