@@ -1,46 +1,60 @@
-# Power Duration App (Beta)
+# Power-Duration App
 
-This is a Shiny app that estimates a power-duration profile from five maximal field tests.
+A Shiny app that estimates a practical power-duration profile from 5 maximal field tests on an ergometer.
 
-## Purpose
+**Use the app:** [YOUR CONNECT CLOUD URL]
 
-Provide a simple way to:
-- enter five test results  
-- visualize the power-duration profile  
-- compare results over time  
-- generate practical training targets  
+## Who it's for
 
-## Test Protocol
+Home-gym athletes and coaches who can read average watts from an ergometer and want a repeatable way to track performance across short and long efforts.
 
-The app uses five maximal average-power efforts:
-- 45 seconds  
-- 3 minutes  
-- 6 minutes  
-- 10 minutes  
-- 20 minutes  
+## The tests
 
-These are completed across an 11-day testing window.
+5 maximal average-power efforts, shortest to longest, over about 11 days:
 
-## What This App Does
+| Suggested day | Test |
+| ----- | ----- |
+| Week 1, Monday | 45 seconds |
+| Week 1, Wednesday | 3 minutes |
+| Week 1, Friday | 6 minutes |
+| Week 2, Monday | 10 minutes |
+| Week 2, Thursday | 20 minutes |
 
-- estimates a power-duration profile from field-test data  
-- displays observed test points and a fitted curve  
-- provides practical training targets based on the profile  
-- allows simple comparison across test sessions  
+The weekdays are a suggested cadence. The spacing allows recovery between efforts, and the 20-minute test comes last because it's the most sensitive to pacing and fatigue. The app's Testing Protocol tab covers warm-up, pacing, and when to delay or repeat a test.
 
-## What This App Does Not Do
+## What the app shows
 
-- does not measure lactate threshold or ventilatory thresholds  
-- does not define exact physiological zones  
-- does not provide precise prescriptions  
-- does not replace laboratory testing  
+- Your 5 tested results and a fitted power-duration curve. Tested points and modeled values are shown separately, and the curve beyond 20 minutes is marked as extrapolated.
+- Estimated critical power (CP) and W′ as secondary, model-derived metrics.
+- Predicted power at 8 fixed durations, from 1 to 60 minutes.
+- Practical training targets for 5 workout categories, each tied to specific durations.
+- Comparisons with your earlier testing blocks.
+- Data-quality checks that flag entry errors and unusual patterns, with guidance on whether to retest.
 
-## Data Handling (Important)
+## What it doesn't measure
 
-This version does not store data between sessions.  
-Users must download their history CSV before closing and re-upload it later.
+The app estimates performance from field tests. It does not measure lactate threshold, ventilatory thresholds, VO2max, or metabolic zones, and it doesn't replace laboratory testing. Training targets are starting references to adjust based on how your workouts go.
+
+## Your data
+
+The app stores nothing between sessions. Download your history CSV from the Import / Export tab before closing, then upload it next time to pick up where you left off.
+
+## Run it locally
+
+1. Install R and these packages: `shiny`, `ggplot2`, `dplyr`, `readr`, `scales`, `tidyr`, `DT`.
+2. Open this folder in Positron or RStudio.
+3. In the console, run `shiny::runApp()`.
+
+## Project documents
+
+- `CHANGELOG.md`: changes users will notice, by version.
+- `docs/DECISIONS.md`: design decisions and the reasoning behind them.
+- `docs/`: the planning documents and the scientific bibliography.
 
 ## Status
 
-Version 1 beta.  
-Outputs are estimates and should be interpreted with context.
+Version 1.0 is live. Version 1.1 is in development; see `CHANGELOG.md` for what's changing.
+
+## License
+
+Copyright © 2026 Ben Skutnik. All rights reserved. No license is granted to copy, modify, or redistribute this code.
