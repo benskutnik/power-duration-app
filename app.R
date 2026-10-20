@@ -37,6 +37,34 @@ prediction_durations <- c(
   "60 min" = 3600
 )
 
+# ------------------------------
+# Validation thresholds (see docs/DECISIONS.md, D-005 to D-009)
+# ------------------------------
+
+# Retest levels from least to most serious. Position 1 means no issues.
+retest_levels <- c(
+  "No retest signal",
+  "Keep, but interpret cautiously",
+  "Retest suggested",
+  "Retest recommended"
+)
+
+# One plain-language sentence per retest level, in the same order (D-009).
+confidence_sentences <- c(
+  "Usable. No data-quality issues were detected from the entered values.",
+  "Usable. Minor issues were noted; interpret the profile with some caution.",
+  "Usable, but one or more results look unusual. Repeating the flagged test would improve confidence.",
+  "Model outputs are withheld for this testing block. Correct the entry or complete a replacement block for a normal profile."
+)
+
+max_20min_power_w <- 600                        # D-006: above this, likely not watts
+outlier_ratio_limits <- c(3.0, 2.0, 2.0, 2.0)   # D-005: shorter / longer, per adjacent pair
+near_flat_decline <- 0.01                       # D-007: adjacent decline at or below 1%
+steep_ratio_45s_3min <- 2.0                     # D-007: 45 s / 3 min above this (up to 3.0)
+steep_decline_limits <- c(NA, 0.25, 0.20, 0.20) # D-007: 3-6, 6-10, 10-20 min declines
+curve_shape_limit <- 0.04                       # D-007: interior points vs quadratic fit
+history_mismatch_limit <- 0.08                  # D-007: any duration vs baseline record
+
 history_required_cols <- c(
   "athlete_name", "test_date", "power_45s", "power_3min", "power_6min",
   "power_10min", "power_20min"
@@ -48,7 +76,7 @@ history_optional_cols <- c(
   "predicted_power_1min", "predicted_power_2min", "predicted_power_4min",
   "predicted_power_8min", "predicted_power_12min", "predicted_power_15min",
   "predicted_power_30min", "predicted_power_60min", "warning_flags",
-  "confidence_summary"
+  "confidence_summary", "retest_level"
 )
 
 # ------------------------------
@@ -81,7 +109,8 @@ empty_history <- function() {
     predicted_power_30min = numeric(),
     predicted_power_60min = numeric(),
     warning_flags = character(),
-    confidence_summary = character()
+    confidence_summary = character(),
+    retest_level = character()
   )
 }
 
@@ -128,6 +157,68 @@ make_profile_key <- function(athlete_name, test_date) {
   paste(normalize_athlete_name(athlete_name), as.character(as.Date(test_date)), sep = "|")
 }
 
+
+# Equipment is compared case-insensitively, and blank or missing means
+# "not specified". Two tests are comparable when they name the same
+# equipment or both leave it unspecified. "Other" is never comparable,
+# since two "Other" machines may differ (D-010).
+normalize_equipment <- function(x) {
+  x <- tolower(trimws(as.character(x)))
+  x[is.na(x)] <- ""
+  x
+}
+
+equipment_comparable <- function(a, b) {
+  a <- normalize_equipment(a)
+  b <- normalize_equipment(b)
+  a == b & a != "other"
+}
+
+describe_equipment <- function(x) {
+  if (normalize_equipment(x) == "") "unspecified equipment" else as.character(x)
+}
+
+# The baseline for history checks and comparisons is the most recent earlier
+# test for the same athlete that produced a normal profile and used
+# comparable equipment (D-010). When the most recent earlier normal test used
+# different equipment, the returned note says so instead of comparing wattage.
+find_baseline <- function(test_row, history_df) {
+  none <- list(baseline = NULL, note = NULL)
+
+  if (is.null(history_df) || nrow(history_df) == 0 || is.na(test_row$test_date)) {
+    return(none)
+  }
+
+  earlier_normal <- history_df %>%
+    filter(
+      normalize_athlete_name(athlete_name) == normalize_athlete_name(test_row$athlete_name),
+      test_date < test_row$test_date,
+      !(retest_level %in% "Retest recommended")
+    ) %>%
+    arrange(desc(test_date))
+
+  if (nrow(earlier_normal) == 0) {
+    return(none)
+  }
+
+  comparable <- equipment_comparable(earlier_normal$ergometer_type, test_row$ergometer_type)
+
+  note <- NULL
+  if (!comparable[1]) {
+    note <- paste0(
+      "Your most recent earlier test (", format(earlier_normal$test_date[1]), ") was on ",
+      describe_equipment(earlier_normal$ergometer_type[1]), ", and this one is on ",
+      describe_equipment(test_row$ergometer_type),
+      ". Results on equipment that can't be confirmed as the same aren't compared by wattage."
+    )
+  }
+
+  list(
+    baseline = if (any(comparable)) earlier_normal[which(comparable)[1], ] else NULL,
+    note = note
+  )
+}
+
 to_long_profile <- function(test_row) {
   tibble(
     duration_label = factor(names(test_durations), levels = names(test_durations)),
@@ -142,19 +233,35 @@ to_long_profile <- function(test_row) {
   )
 }
 
+# Check a test entry in 3 layers (see docs/DECISIONS.md, D-005 to D-010):
+# 1. Hard input errors block calculation and saving.
+# 2. Ordering failures, suspected entry errors, and sessions the user marked
+#    Compromised or Retest needed withhold model outputs. Raw values can be
+#    saved as a compromised record.
+# 3. Soft warnings allow outputs but raise the retest level.
 validate_test_values <- function(test_row, history_df = NULL) {
   watts <- c(
-    test_row$power_45s,
-    test_row$power_3min,
-    test_row$power_6min,
-    test_row$power_10min,
-    test_row$power_20min
+    test_row$power_45s, test_row$power_3min, test_row$power_6min,
+    test_row$power_10min, test_row$power_20min
   )
+  duration_names <- names(test_durations)
 
   errors <- character()
+  withheld_reasons <- character()
   warnings <- character()
+  warning_levels <- numeric()
+  notes <- character()
   flags <- character()
 
+  # Record a soft warning with its retest level:
+  # 1 = Keep, but interpret cautiously; 2 = Retest suggested.
+  add_warning <- function(message, level, flag) {
+    warnings <<- c(warnings, message)
+    warning_levels <<- c(warning_levels, level)
+    flags <<- c(flags, flag)
+  }
+
+  # Layer 1: hard input errors (D-006).
   if (is.na(test_row$athlete_name) || test_row$athlete_name == "") {
     errors <- c(errors, "Athlete name is required.")
   }
@@ -163,105 +270,141 @@ validate_test_values <- function(test_row, history_df = NULL) {
     errors <- c(errors, "Testing block start date is required.")
   }
 
-  if (any(is.na(watts))) {
-    errors <- c(errors, "All five watt values are required.")
-  }
-
-  if (any(!is.finite(watts), na.rm = TRUE)) {
-    errors <- c(errors, "All watt values must be valid numbers.")
-  }
-
-  if (any(watts <= 0, na.rm = TRUE)) {
+  if (any(is.na(watts) | !is.finite(watts))) {
+    errors <- c(errors, "All 5 watt values are required and must be numbers.")
+  } else if (any(watts <= 0)) {
     errors <- c(errors, "All watt values must be greater than zero.")
+  } else if (watts[5] > max_20min_power_w) {
+    errors <- c(errors, paste0(
+      "The 20 min value (", round(watts[5]), " W) is above ", max_20min_power_w,
+      " W, beyond world-class 20-minute power. Check that you entered average watts, not calories or pace."
+    ))
   }
 
-  if (length(unique(watts[!is.na(watts)])) == 1 && sum(!is.na(watts)) == 5) {
-    errors <- c(errors, "All five watt values are identical. Recheck the entries before continuing.")
-  }
+  # Layer 2: ordering failures and suspected entry errors (D-005, D-017).
+  # Checked pair by pair, so each message names the 2 values involved.
+  if (length(errors) == 0) {
+    for (i in 1:4) {
+      shorter <- watts[i]
+      longer <- watts[i + 1]
 
-  if (sum(!is.na(watts)) == 5) {
-    if (!(test_row$power_45s > test_row$power_3min &&
-          test_row$power_3min > test_row$power_6min &&
-          test_row$power_6min > test_row$power_10min &&
-          test_row$power_10min > test_row$power_20min)) {
-      errors <- c(errors, "Power must decrease as duration gets longer for this fixed test set. Recheck the entries or repeat the affected test.")
-      flags <- c(flags, "order_violation")
-    }
-
-    drop_ratios <- c(
-      test_row$power_3min / test_row$power_45s,
-      test_row$power_6min / test_row$power_3min,
-      test_row$power_10min / test_row$power_6min,
-      test_row$power_20min / test_row$power_10min
-    )
-
-    if (any(drop_ratios > 0.98)) {
-      warnings <- c(warnings, "One or more adjacent durations are unusually close together. This may reflect pacing, non-maximal effort, or a data-entry problem.")
-      flags <- c(flags, "flat_segment")
-    }
-
-    if (any(drop_ratios < 0.65)) {
-      warnings <- c(warnings, "One or more adjacent drops are unusually large. This may reflect pacing error, fatigue, or a typo.")
-      flags <- c(flags, "sharp_drop")
-    }
-
-    if ((test_row$power_20min / test_row$power_45s) < 0.35) {
-      warnings <- c(warnings, "Your 20-minute power is unusually low relative to your 45-second power. Interpret this profile cautiously.")
-      flags <- c(flags, "low_20min_anchor")
-    }
-
-    if ((test_row$power_45s / test_row$power_3min) > 2.2) {
-      warnings <- c(warnings, "Your 45-second power is unusually high relative to your 3-minute power. Check pacing or entry accuracy.")
-      flags <- c(flags, "high_short_bias")
-    }
-  }
-
-  if (!isTRUE(test_row$protocol_confirmed)) {
-    warnings <- c(warnings, "Protocol confirmation is unchecked. Interpret results more cautiously if the full testing window was not followed.")
-    flags <- c(flags, "protocol_unconfirmed")
-  }
-
-  if (!is.null(history_df) && nrow(history_df) > 0 && !is.na(test_row$athlete_name) && test_row$athlete_name != "") {
-    same_athlete <- history_df %>%
-      filter(athlete_name == test_row$athlete_name) %>%
-      arrange(desc(test_date))
-
-    if (nrow(same_athlete) > 0) {
-      latest <- same_athlete[1, ]
-      hist_watts <- c(latest$power_45s, latest$power_3min, latest$power_6min, latest$power_10min, latest$power_20min)
-      pct_change <- abs((watts - hist_watts) / hist_watts)
-
-      if (any(pct_change > 0.25, na.rm = TRUE)) {
-        warnings <- c(warnings, "At least one duration differs substantially from your most recent saved test. This may be real improvement, fatigue, or a testing inconsistency.")
-        flags <- c(flags, "history_mismatch")
+      if (shorter <= longer) {
+        withheld_reasons <- c(withheld_reasons, paste0(
+          "The ", duration_names[i], " value (", round(shorter), " W) should be higher than the ",
+          duration_names[i + 1], " value (", round(longer), " W). Correct the entry, or retest the ",
+          duration_names[i], " or ", duration_names[i + 1], " effort."
+        ))
+        flags <- c(flags, "order_violation")
+      } else if (shorter / longer > outlier_ratio_limits[i]) {
+        withheld_reasons <- c(withheld_reasons, paste0(
+          "The ", duration_names[i], " value (", round(shorter), " W) is more than ",
+          outlier_ratio_limits[i], " times the ", duration_names[i + 1], " value (",
+          round(longer), " W). One of these is likely an entry error."
+        ))
+        flags <- c(flags, "suspected_entry_error")
       }
     }
   }
 
-  confidence_summary <- if (length(errors) > 0) {
-    "Do not use this profile until the blocking issues are fixed."
-  } else if (length(warnings) > 0) {
-    "Usable with caution. Review warnings before saving or interpreting the profile."
-  } else {
-    "Usable. No major data-quality issues were detected from the entered values."
+  has_pattern_block <- length(withheld_reasons) > 0
+
+  # A session the user marked Compromised or Retest needed keeps its raw
+  # values but gets no model outputs (D-009).
+  if (test_row$test_validity_flag %in% c("Compromised", "Retest needed")) {
+    withheld_reasons <- c(withheld_reasons, paste0(
+      "You marked this session \"", test_row$test_validity_flag,
+      "\", so model outputs are withheld. A replacement testing block is needed for a normal profile."
+    ))
+    flags <- c(flags, "user_marked")
   }
 
-  retest_level <- if (length(errors) > 0) {
-    "Retest recommended"
-  } else if (length(warnings) >= 2) {
-    "Retest suggested"
-  } else if (length(warnings) == 1) {
-    "Keep, but interpret cautiously"
-  } else {
-    "No retest signal"
+  # Layer 3: soft warnings (D-007), only for profiles that will be modeled.
+  if (length(errors) == 0 && length(withheld_reasons) == 0) {
+    declines <- 1 - watts[2:5] / watts[1:4]
+
+    for (i in 1:4) {
+      if (declines[i] <= near_flat_decline) {
+        add_warning(paste0(
+          "Your ", duration_names[i], " and ", duration_names[i + 1], " results are within ",
+          near_flat_decline * 100, "% of each other. Check the entries, and whether both efforts were maximal."
+        ), 1, "near_flat")
+      }
+    }
+
+    ratio_45s_3min <- watts[1] / watts[2]
+    if (ratio_45s_3min > steep_ratio_45s_3min) {
+      add_warning(paste0(
+        "Your 45 s power is ", round(ratio_45s_3min, 1), " times your 3 min power, steeper than most profiles. ",
+        "Check the entry. If it matches your earlier tests, it likely reflects your profile."
+      ), 1, "steep_45s_3min")
+    }
+
+    for (i in 2:4) {
+      if (declines[i] > steep_decline_limits[i]) {
+        add_warning(paste0(
+          "Power drops ", round(declines[i] * 100), "% from ", duration_names[i], " to ",
+          duration_names[i + 1], ", above the app's ", steep_decline_limits[i] * 100,
+          "% check. This can reflect pacing, fatigue, or an entry error."
+        ), 2, "steep_decline")
+      }
+    }
+
+    # Curve shape: compare the 3 interior results with a smooth quadratic
+    # curve (in log-log space) fitted to all 5. This is a quality check only;
+    # the displayed curve still comes from the power-law fit.
+    log_duration <- log(unname(test_durations))
+    shape_fit <- lm(log(watts) ~ log_duration + I(log_duration^2))
+    shape_gap <- exp(residuals(shape_fit)) - 1
+    for (i in 2:4) {
+      if (abs(shape_gap[i]) > curve_shape_limit) {
+        add_warning(paste0(
+          "Your ", duration_names[i], " result is ", round(abs(shape_gap[i]) * 100), "% ",
+          if (shape_gap[i] > 0) "above" else "below",
+          " the smooth curve fitted to your 5 results. Check the entry, or consider repeating that test."
+        ), 2, "curve_shape")
+      }
+    }
+
+    if (!isTRUE(test_row$protocol_confirmed)) {
+      add_warning(
+        "Protocol adherence isn't confirmed. Interpret results more cautiously if the schedule or standardization rules weren't followed.",
+        1, "protocol_unconfirmed"
+      )
+    }
+
+    baseline_info <- find_baseline(test_row, history_df)
+    if (!is.null(baseline_info$note)) {
+      notes <- c(notes, baseline_info$note)
+    }
+    baseline <- baseline_info$baseline
+    if (!is.null(baseline)) {
+      baseline_watts <- c(
+        baseline$power_45s, baseline$power_3min, baseline$power_6min,
+        baseline$power_10min, baseline$power_20min
+      )
+      if (any(abs(watts / baseline_watts - 1) > history_mismatch_limit, na.rm = TRUE)) {
+        add_warning(paste0(
+          "At least one result differs by more than ", history_mismatch_limit * 100,
+          "% from your previous comparable test (", format(baseline$test_date),
+          "). This may reflect real change, fatigue, or a testing inconsistency."
+        ), 2, "history_mismatch")
+      }
+    }
   }
+
+  outputs_withheld <- length(errors) > 0 || length(withheld_reasons) > 0
+  level <- if (outputs_withheld) 3 else max(c(0, warning_levels))
 
   list(
-    errors = unique(errors),
-    warnings = unique(warnings),
+    errors = errors,
+    withheld_reasons = withheld_reasons,
+    has_pattern_block = has_pattern_block,
+    warnings = warnings,
+    notes = notes,
     flags = unique(flags),
-    confidence_summary = confidence_summary,
-    retest_level = retest_level
+    outputs_withheld = outputs_withheld,
+    retest_level = retest_levels[level + 1],
+    confidence_summary = confidence_sentences[level + 1]
   )
 }
 
@@ -309,8 +452,12 @@ estimate_secondary_metrics <- function(profile_long) {
   cp_w <- unname(coef(fit)[["duration_sec"]])
   wprime_j <- unname(coef(fit)[["(Intercept)"]])
 
-  if (!is.finite(cp_w) || cp_w <= 0) cp_w <- NA_real_
-  if (!is.finite(wprime_j) || wprime_j <= 0) wprime_j <- NA_real_
+  # CP and W′ are reported as a pair. If either is non-finite or not
+  # positive, both are unavailable rather than showing a misleading half
+  # (Resolved spec §1).
+  if (!is.finite(cp_w) || cp_w <= 0 || !is.finite(wprime_j) || wprime_j <= 0) {
+    return(list(cp_w = NA_real_, wprime_j = NA_real_))
+  }
 
   list(cp_w = cp_w, wprime_j = wprime_j)
 }
@@ -419,7 +566,15 @@ build_training_targets <- function(pred_table, cp_metrics) {
   )
 }
 
-make_profile_record <- function(test_row, model_fit, cp_metrics, pred_table, validation_result) {
+# Build one saved-history record. Raw values are always kept. When model
+# outputs are withheld (D-009), the model arguments are left out and every
+# model-derived field is empty (NA).
+make_profile_record <- function(test_row, validation_result, model_fit = NULL,
+                                cp_metrics = NULL, pred_table = NULL) {
+  predicted_at <- function(label) {
+    if (is.null(pred_table)) NA_real_ else pred_table$predicted_power_w[pred_table$duration == label]
+  }
+
   tibble(
     athlete_name = test_row$athlete_name,
     test_date = as.Date(test_row$test_date),
@@ -432,20 +587,21 @@ make_profile_record <- function(test_row, model_fit, cp_metrics, pred_table, val
     ergometer_type = test_row$ergometer_type,
     protocol_confirmed = test_row$protocol_confirmed,
     test_validity_flag = test_row$test_validity_flag,
-    estimated_cp = cp_metrics$cp_w,
-    estimated_w_prime = cp_metrics$wprime_j,
-    power_law_a = model_fit$a,
-    power_law_b = model_fit$b,
-    predicted_power_1min = pred_table$predicted_power_w[pred_table$duration == "1 min"],
-    predicted_power_2min = pred_table$predicted_power_w[pred_table$duration == "2 min"],
-    predicted_power_4min = pred_table$predicted_power_w[pred_table$duration == "4 min"],
-    predicted_power_8min = pred_table$predicted_power_w[pred_table$duration == "8 min"],
-    predicted_power_12min = pred_table$predicted_power_w[pred_table$duration == "12 min"],
-    predicted_power_15min = pred_table$predicted_power_w[pred_table$duration == "15 min"],
-    predicted_power_30min = pred_table$predicted_power_w[pred_table$duration == "30 min"],
-    predicted_power_60min = pred_table$predicted_power_w[pred_table$duration == "60 min"],
+    estimated_cp = if (is.null(cp_metrics)) NA_real_ else cp_metrics$cp_w,
+    estimated_w_prime = if (is.null(cp_metrics)) NA_real_ else cp_metrics$wprime_j,
+    power_law_a = if (is.null(model_fit)) NA_real_ else model_fit$a,
+    power_law_b = if (is.null(model_fit)) NA_real_ else model_fit$b,
+    predicted_power_1min = predicted_at("1 min"),
+    predicted_power_2min = predicted_at("2 min"),
+    predicted_power_4min = predicted_at("4 min"),
+    predicted_power_8min = predicted_at("8 min"),
+    predicted_power_12min = predicted_at("12 min"),
+    predicted_power_15min = predicted_at("15 min"),
+    predicted_power_30min = predicted_at("30 min"),
+    predicted_power_60min = predicted_at("60 min"),
     warning_flags = paste(validation_result$flags, collapse = "; "),
-    confidence_summary = validation_result$confidence_summary
+    confidence_summary = validation_result$confidence_summary,
+    retest_level = validation_result$retest_level
   )
 }
 
@@ -465,6 +621,12 @@ recompute_history_record <- function(row, history_df = empty_history()) {
   )
 
   validation_result <- validate_test_values(test_row, history_df)
+
+  # Withheld outputs: keep the raw values only, with no fitted model (D-009).
+  if (isTRUE(validation_result$outputs_withheld)) {
+    return(make_profile_record(test_row = test_row, validation_result = validation_result))
+  }
+
   profile_long <- to_long_profile(test_row)
   model_fit <- fit_power_duration_model(profile_long)
   cp_metrics <- estimate_secondary_metrics(profile_long)
@@ -582,51 +744,33 @@ prepare_history_trend_data <- function(history_df) {
     )
 }
 
+# Compare the current entry with its baseline: the most recent earlier test
+# for the same athlete with a normal profile on comparable equipment (D-010).
 build_comparison_table <- function(current_row, history_df) {
-  # Compare against another saved test for the same athlete. The current
-  # entry's own saved copy (same name and start date) is left out, so a
-  # loaded-and-edited record isn't compared against its old version.
-  current_key <- make_profile_key(current_row$athlete_name, current_row$test_date)
+  baseline_info <- find_baseline(current_row, history_df)
+  prior <- baseline_info$baseline
 
-  same_athlete <- history_df %>%
-    filter(
-      normalize_athlete_name(athlete_name) == normalize_athlete_name(current_row$athlete_name),
-      make_profile_key(athlete_name, test_date) != current_key
-    ) %>%
-    arrange(desc(test_date))
-
-  if (nrow(same_athlete) == 0) {
-    return(tibble(Message = "No prior saved test exists yet for this athlete. Save at least one earlier test to build comparisons."))
+  if (is.null(prior)) {
+    return(tibble(Message = paste(
+      c("No earlier comparable saved test exists yet for this athlete.", baseline_info$note),
+      collapse = " "
+    )))
   }
-
-  prior <- same_athlete[1, ]
 
   current_vals <- c(current_row$power_45s, current_row$power_3min, current_row$power_6min, current_row$power_10min, current_row$power_20min)
   prior_vals <- c(prior$power_45s, prior$power_3min, prior$power_6min, prior$power_10min, prior$power_20min)
 
-  comparison_rows <- tibble(
-    metric = c("45 s power", "3 min power", "6 min power", "10 min power", "20 min power"),
-    current_value = current_vals,
-    prior_value = prior_vals
-  ) %>%
-    mutate(
-      absolute_change = current_value - prior_value,
-      percent_change = if_else(
-        is.na(prior_value) | prior_value == 0,
-        NA_real_,
-        100 * absolute_change / prior_value
-      ),
-      current_value = as.character(round(current_value, 0)),
-      prior_value = as.character(round(prior_value, 0)),
-      absolute_change = as.character(round(absolute_change, 0)),
-      percent_change = if_else(
-        is.na(percent_change),
-        "NA",
-        paste0(format(round(percent_change, 1), nsmall = 1), "%")
-      )
-    )
+  comparison <- tibble(
+    Duration = names(test_durations),
+    Current = round(current_vals),
+    Previous = round(prior_vals),
+    `Change (W)` = round(current_vals - prior_vals),
+    `Change (%)` = sprintf("%+.1f%%", 100 * (current_vals / prior_vals - 1))
+  )
 
-  comparison_rows
+  # Name the previous column by its start date so the comparison is explicit.
+  names(comparison)[3] <- paste0("Previous (", format(prior$test_date), ")")
+  comparison
 }
 
 format_duration_label <- function(sec) {
@@ -775,11 +919,13 @@ ui <- navbarPage(
         column(8, uiOutput("history_action_status"))
       ),
       br(),
-      h3("Current vs Most Recent Saved Test"),
-      tags$small("Changes are shown for each of the 5 tested durations."),
+      h3("Current vs Previous Comparable Test"),
+      tags$small("The comparison uses your most recent earlier test with a normal profile on the same equipment."),
       tags$br(),
       tags$small("Small changes may reflect normal test variation. Compare tests done on the same ergometer and under similar conditions."),
       tableOutput("comparison_table"),
+      h4("Profile shape: current vs previous comparable test"),
+      plotOutput("overlay_plot", height = "380px"),
       br(),
       h3("Historical Trends"),
       plotOutput("history_plot", height = "420px")
@@ -872,7 +1018,7 @@ server <- function(input, output, session) {
   })
 
   validated_test <- reactive({
-    req(length(current_validation()$errors) == 0)
+    req(!current_validation()$outputs_withheld)
     current_inputs()
   })
 
@@ -919,6 +1065,10 @@ server <- function(input, output, session) {
       paste0("Next: enter ", paste(missing, collapse = ", "), ".")
     } else if (n_errors > 0) {
       "Next: fix the blocking issues listed below."
+    } else if (current_validation()$has_pattern_block) {
+      "Next: correct the entry, or save the raw values as a compromised record. See the messages below."
+    } else if (current_validation()$outputs_withheld) {
+      "Next: save the raw values for your records. A replacement testing block is needed for a normal profile."
     } else {
       "Next: review the profile, then save it to history. Download your history from Import / Export to keep it."
     }
@@ -933,39 +1083,71 @@ server <- function(input, output, session) {
   output$validation_box <- renderUI({
     v <- current_validation()
 
-    if (length(v$errors) == 0 && length(v$warnings) == 0) {
-      return(
-        tags$div(
-          style = "padding:10px; background-color:#eef7ee; border:1px solid #cfe5cf; margin-bottom:15px;",
-          tags$strong("Status: "),
-          v$confidence_summary
-        )
-      )
+    green_style <- "padding:10px; background-color:#eef7ee; border:1px solid #cfe5cf; margin-bottom:15px;"
+    amber_style <- "padding:10px; background-color:#fff4e5; border:1px solid #e5c58a; margin-bottom:15px;"
+
+    # Nothing to report: a short green status line.
+    if (length(v$errors) == 0 && length(v$withheld_reasons) == 0 &&
+        length(v$warnings) == 0 && length(v$notes) == 0) {
+      return(tags$div(style = green_style, tags$strong("Status: "), v$confidence_summary))
     }
 
+    # Offer the compromised-save route only for ordering failures and
+    # suspected entry errors on a session still marked Complete.
+    offer_compromised_save <- v$has_pattern_block &&
+      identical(current_inputs()$test_validity_flag, "Complete")
+
     tags$div(
-      style = "padding:10px; background-color:#fff4e5; border:1px solid #e5c58a; margin-bottom:15px;",
+      style = amber_style,
       tags$strong("Input checks"),
-      if (length(v$errors) > 0) {
-        tags$div(
-          tags$p(tags$strong("Blocking issues")),
-          tags$ul(lapply(v$errors, tags$li))
+      if (length(v$errors) > 0) tags$div(
+        tags$p(tags$strong("Blocking issues")),
+        tags$ul(lapply(v$errors, tags$li))
+      ),
+      if (length(v$withheld_reasons) > 0) tags$div(
+        tags$p(tags$strong("Model outputs withheld")),
+        tags$ul(lapply(v$withheld_reasons, tags$li)),
+        if (offer_compromised_save) tags$p(
+          "To keep these raw values for review, set the Test validity flag to Compromised, then save."
         )
-      },
-      if (length(v$warnings) > 0) {
-        tags$div(
-          tags$p(tags$strong("Warnings")),
-          tags$ul(lapply(v$warnings, tags$li))
-        )
-      },
-      tags$p(tags$strong("Retest guidance: "), v$retest_level)
+      ),
+      if (length(v$warnings) > 0) tags$div(
+        tags$p(tags$strong("Warnings")),
+        tags$ul(lapply(v$warnings, tags$li))
+      ),
+      if (length(v$notes) > 0) tags$div(
+        tags$p(tags$strong("Notes")),
+        tags$ul(lapply(v$notes, tags$li))
+      ),
+      tags$p(tags$strong("Retest guidance: "), v$retest_level, ". ", v$confidence_summary)
     )
   })
 
   output$pd_plot <- renderPlot({
+    v <- current_validation()
     validate(
-      need(length(current_validation()$errors) == 0, "Fix the blocking issues to view the power-duration profile.")
+      need(length(v$errors) == 0, "Fix the blocking issues to view your results.")
     )
+
+    # Outputs withheld: plot the entered values only, with no fitted curve,
+    # so the problem is visible without implying a modeled profile.
+    if (v$outputs_withheld) {
+      raw_df <- to_long_profile(current_inputs())
+      return(
+        ggplot(raw_df, aes(x = duration_sec, y = power_w)) +
+          geom_point(size = 3) +
+          geom_text(aes(label = paste0(round(power_w, 0), " W")), vjust = -1, size = 4) +
+          scale_x_log10(breaks = unname(test_durations), labels = names(test_durations)) +
+          scale_y_continuous(limits = c(0, NA), expand = expansion(mult = c(0, 0.1)), labels = label_number()) +
+          labs(
+            title = "Entered Results",
+            subtitle = "No fitted curve: model outputs are withheld. See the messages above.",
+            x = "Duration",
+            y = "Average power (W)"
+          ) +
+          theme_minimal(base_size = 13)
+      )
+    }
 
     profile_df <- current_profile() %>%
       mutate(label_y = power_w + if_else(duration_sec == 45, 0, 8))
@@ -1038,7 +1220,7 @@ server <- function(input, output, session) {
 
   output$summary_table <- renderTable({
     validate(
-      need(length(current_validation()$errors) == 0, "Fix the blocking issues to view the summary.")
+      need(!current_validation()$outputs_withheld, "Resolve the messages above to view the summary.")
     )
     build_summary_table(
       current_inputs(),
@@ -1050,7 +1232,7 @@ server <- function(input, output, session) {
 
   output$prediction_table <- renderTable({
     validate(
-      need(length(current_validation()$errors) == 0, "Fix the blocking issues to view predicted powers.")
+      need(!current_validation()$outputs_withheld, "Resolve the messages above to view predicted powers.")
     )
     current_predictions() %>%
       transmute(
@@ -1072,13 +1254,28 @@ server <- function(input, output, session) {
       return(NULL)
     }
 
-    record <- make_profile_record(
-      test_row = current_inputs(),
-      model_fit = current_model_fit(),
-      cp_metrics = current_secondary_metrics(),
-      pred_table = current_predictions(),
-      validation_result = current_validation()
-    )
+    # Ordering failures and suspected entry errors save only as an explicit
+    # compromised record (D-006).
+    if (v$has_pattern_block && identical(current_inputs()$test_validity_flag, "Complete")) {
+      showNotification(
+        "Not saved. Correct the entry, or set the Test validity flag to Compromised to save the raw values for review.",
+        type = "error", duration = 8
+      )
+      return(NULL)
+    }
+
+    # Withheld outputs: save the raw values only (D-009).
+    record <- if (v$outputs_withheld) {
+      make_profile_record(test_row = current_inputs(), validation_result = v)
+    } else {
+      make_profile_record(
+        test_row = current_inputs(),
+        validation_result = v,
+        model_fit = current_model_fit(),
+        cp_metrics = current_secondary_metrics(),
+        pred_table = current_predictions()
+      )
+    }
 
     record_key <- make_profile_key(record$athlete_name, record$test_date)
     existing_keys <- make_profile_key(history_data()$athlete_name, history_data()$test_date)
@@ -1279,7 +1476,8 @@ server <- function(input, output, session) {
           `10 min` = power_10min,
           `20 min` = power_20min,
           `Estimated CP` = round(estimated_cp, 0),
-          `Confidence` = confidence_summary
+          `Validity` = test_validity_flag,
+          `Retest guidance` = retest_level
         ),
       options = list(pageLength = 8, scrollX = TRUE),
       rownames = FALSE,
@@ -1289,11 +1487,54 @@ server <- function(input, output, session) {
 
   output$comparison_table <- renderTable({
     validate(
-      need(length(current_validation()$errors) == 0, "Fix the blocking issues to compare the current test against history.")
+      need(!current_validation()$outputs_withheld, "Resolve the messages above to compare the current test against history.")
     )
     build_comparison_table(current_inputs(), history_data())
-  }, striped = TRUE, bordered = TRUE, spacing = "s")
+  }, striped = TRUE, bordered = TRUE, spacing = "s", digits = 0)
 
+    # Profile-shape comparison (D-016): the current fitted curve and points
+  # over the baseline's, within the tested range only (45 s to 20 min).
+  output$overlay_plot <- renderPlot({
+    validate(
+      need(!current_validation()$outputs_withheld, "Enter a test that produces a normal profile to compare shapes.")
+    )
+
+    baseline <- find_baseline(current_inputs(), history_data())$baseline
+    validate(
+      need(!is.null(baseline), "No earlier comparable saved test exists yet for this athlete.")
+    )
+
+    baseline_label <- paste0("Previous (", format(baseline$test_date), ")")
+    longest_test_sec <- max(test_durations)
+
+    points_df <- bind_rows(
+      current_profile() %>% mutate(test = "Current"),
+      to_long_profile(baseline) %>% mutate(test = baseline_label)
+    )
+
+    curves_df <- bind_rows(
+      current_model_fit()$curve %>% mutate(test = "Current"),
+      fit_power_duration_model(to_long_profile(baseline))$curve %>% mutate(test = baseline_label)
+    ) %>%
+      filter(duration_sec <= longest_test_sec)
+
+    ggplot() +
+      geom_line(data = curves_df, aes(x = duration_sec, y = pred_power_w, colour = test), linewidth = 1) +
+      geom_point(data = points_df, aes(x = duration_sec, y = power_w, colour = test), size = 3) +
+      scale_colour_manual(values = setNames(c("black", "grey60"), c("Current", baseline_label))) +
+      scale_x_log10(breaks = unname(test_durations), labels = names(test_durations)) +
+      scale_y_continuous(labels = label_number()) +
+      labs(
+        title = "Profile Shape Comparison",
+        subtitle = "Fitted curves within the tested range (45 s to 20 min)",
+        x = "Duration",
+        y = "Average power (W)",
+        colour = NULL
+      ) +
+      theme_minimal(base_size = 13) +
+      theme(legend.position = "top")
+  })
+  
   output$history_plot <- renderPlot({
     hist <- history_data()
 
@@ -1324,7 +1565,7 @@ server <- function(input, output, session) {
 
   output$training_targets_table <- renderTable({
     validate(
-      need(length(current_validation()$errors) == 0, "Fix the blocking issues to generate training targets.")
+      need(!current_validation()$outputs_withheld, "Resolve the messages above to generate training targets.")
     )
     current_training_targets() %>%
       transmute(

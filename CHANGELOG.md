@@ -11,6 +11,9 @@ User-facing changes to the Power-Duration App.
 - The Import / Export page lists the required CSV columns.
 - Saving a test with the same athlete and start date as a saved test asks whether to replace it. Duplicates are no longer created.
 - Saved tests can be loaded back into the entry form for editing from the Historical Comparison tab.
+- Results with an ordering problem or a likely entry error, and sessions marked Compromised or Retest needed, show the entered values without a fitted curve, CP/W′, predictions, or targets. They can be saved as compromised records for review.
+- A 20-minute value above 600 W is flagged as likely not watts, such as a calories reading.
+- Historical Comparison overlays the current profile's curve on the previous comparable test's curve.
 
 ### Changed
 
@@ -22,6 +25,11 @@ User-facing changes to the Power-Duration App.
 - The date field is now labeled "Testing block start date," meaning the day of your 45-second test. The Testing Protocol presents the weekdays as a suggested cadence and gives the spacing to keep if your schedule differs.
 - Athlete names match regardless of capitalization or extra spaces, so "Sam Smith" and "sam  smith" are the same athlete.
 - After any save, replacement, or deletion, the quality checks on every saved test are recalculated.
+- Data-quality checks use new thresholds based on simulated profiles. Typical profiles pass without warnings, and each warning names the results involved.
+- Retest guidance reflects the most serious issue found, instead of the number of warnings.
+- History checks and comparisons use the most recent earlier test with a normal profile on the same equipment. A test on different equipment is noted instead of compared by wattage.
+- The history table shows each test's validity flag and retest guidance.
+- Estimated CP and W′ appear together or not at all.
 
 ### Removed
 
