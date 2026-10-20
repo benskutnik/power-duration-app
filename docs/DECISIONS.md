@@ -153,7 +153,7 @@ A record's baseline is the most recent earlier record (by start date) for the sa
 
 ## D-011: Recompute history after every change
 
-**Date:** 2026-10-19 | **Status:** Decided
+**Date:** 2026-10-19 | **Status:** Implemented (Step 5)
 
 After any save, replace, delete, or upload, every record's derived fields are recomputed in date order.
 
@@ -186,7 +186,7 @@ The whole file is validated before history is replaced. Any failure leaves exist
 
 ## D-013: Athlete key
 
-**Date:** 2026-10-19 | **Status:** Decided
+**Date:** 2026-10-19 | **Status:** Implemented (Step 5)
 
 The profile key uses the athlete name trimmed, with internal spaces collapsed, compared case-insensitively. The name displays as entered.
 

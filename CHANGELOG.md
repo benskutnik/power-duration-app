@@ -9,6 +9,8 @@ User-facing changes to the Power-Duration App.
 - A status bar on Current Test Entry shows how many of the 5 results are entered and what to do next.
 - The Testing Protocol page explains how to record, save, and keep your results, and what the results do and don't measure.
 - The Import / Export page lists the required CSV columns.
+- Saving a test with the same athlete and start date as a saved test asks whether to replace it. Duplicates are no longer created.
+- Saved tests can be loaded back into the entry form for editing from the Historical Comparison tab.
 
 ### Changed
 
@@ -18,6 +20,8 @@ User-facing changes to the Power-Duration App.
 - The predicted-power table moved to Training Targets. It shows whole watts and labels each value as modeled or extrapolated.
 - History CSV files now include `power_law_a` and `power_law_b` instead of `riegel_S` and `riegel_E`. Files exported from version 1.0 can still be uploaded.
 - The date field is now labeled "Testing block start date," meaning the day of your 45-second test. The Testing Protocol presents the weekdays as a suggested cadence and gives the spacing to keep if your schedule differs.
+- Athlete names match regardless of capitalization or extra spaces, so "Sam Smith" and "sam  smith" are the same athlete.
+- After any save, replacement, or deletion, the quality checks on every saved test are recalculated.
 
 ### Removed
 

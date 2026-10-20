@@ -117,6 +117,17 @@ build_test_dataframe <- function(input_list) {
   )
 }
 
+# The unique profile key is the athlete name plus the block start date (D-013).
+# Names are trimmed, internal spaces collapsed, and lowercased, so
+# "Sam Smith" and "sam  smith" on the same date are the same profile.
+normalize_athlete_name <- function(name) {
+  tolower(gsub("\\s+", " ", trimws(as.character(name))))
+}
+
+make_profile_key <- function(athlete_name, test_date) {
+  paste(normalize_athlete_name(athlete_name), as.character(as.Date(test_date)), sep = "|")
+}
+
 to_long_profile <- function(test_row) {
   tibble(
     duration_label = factor(names(test_durations), levels = names(test_durations)),
@@ -491,6 +502,17 @@ recompute_uploaded_history <- function(history_df) {
     select(all_of(names(empty_history())))
 }
 
+# Save a record to history. Any record with the same profile key is removed
+# first, so saving never creates a duplicate. Every record is then
+# recomputed in date order, because a change to one record can change the
+# history checks on later ones (D-011).
+upsert_history_record <- function(history_df, record) {
+  record_key <- make_profile_key(record$athlete_name, record$test_date)
+  existing_keys <- make_profile_key(history_df$athlete_name, history_df$test_date)
+  kept <- history_df[existing_keys != record_key, , drop = FALSE]
+  recompute_uploaded_history(bind_rows(kept, record))
+}
+
 read_history_csv <- function(path) {
   raw <- read_csv(path, show_col_types = FALSE)
   validate_history_file(raw)
@@ -561,16 +583,16 @@ prepare_history_trend_data <- function(history_df) {
 }
 
 build_comparison_table <- function(current_row, history_df) {
+  # Compare against another saved test for the same athlete. The current
+  # entry's own saved copy (same name and start date) is left out, so a
+  # loaded-and-edited record isn't compared against its old version.
+  current_key <- make_profile_key(current_row$athlete_name, current_row$test_date)
+
   same_athlete <- history_df %>%
-    filter(athlete_name == current_row$athlete_name) %>%
-    filter(!(
-      test_date == as.Date(current_row$test_date) &
-        power_45s == current_row$power_45s &
-        power_3min == current_row$power_3min &
-        power_6min == current_row$power_6min &
-        power_10min == current_row$power_10min &
-        power_20min == current_row$power_20min
-    )) %>%
+    filter(
+      normalize_athlete_name(athlete_name) == normalize_athlete_name(current_row$athlete_name),
+      make_profile_key(athlete_name, test_date) != current_key
+    ) %>%
     arrange(desc(test_date))
 
   if (nrow(same_athlete) == 0) {
@@ -684,6 +706,7 @@ protocol_html <- HTML(
 
 ui <- navbarPage(
   title = "Power-Duration App",
+  id = "main_tabs",
 
   tabPanel(
     "Current Test Entry",
@@ -740,11 +763,15 @@ ui <- navbarPage(
     "Historical Comparison",
     fluidPage(
       h3("Saved Test History"),
-      p("Select a saved row to delete it from the current session history."),
+      p("Select a saved row to load it into the entry form for editing, or to delete it."),
       DTOutput("history_table"),
       br(),
       fluidRow(
-        column(4, actionButton("delete_selected_test", "Delete Selected Test")),
+        column(
+          4,
+          actionButton("load_selected_test", "Load Selected Test for Editing"),
+          actionButton("delete_selected_test", "Delete Selected Test")
+        ),
         column(8, uiOutput("history_action_status"))
       ),
       br(),
@@ -1033,6 +1060,10 @@ server <- function(input, output, session) {
       )
   }, striped = TRUE, bordered = TRUE, spacing = "s", digits = 0)
 
+  # Holds a record while the user decides whether to replace a saved test
+  # with the same athlete and start date.
+  pending_record <- reactiveVal(NULL)
+
   observeEvent(input$save_test, {
     v <- current_validation()
 
@@ -1049,12 +1080,41 @@ server <- function(input, output, session) {
       validation_result = current_validation()
     )
 
-    updated <- bind_rows(history_data(), record) %>%
-      arrange(test_date)
+    record_key <- make_profile_key(record$athlete_name, record$test_date)
+    existing_keys <- make_profile_key(history_data()$athlete_name, history_data()$test_date)
 
-    history_data(updated)
+    # Same athlete and start date already saved: ask before replacing.
+    if (record_key %in% existing_keys) {
+      pending_record(record)
+      showModal(modalDialog(
+        title = "Replace saved test?",
+        paste0(
+          "A saved test already exists for ", record$athlete_name,
+          " with a block start date of ", format(record$test_date),
+          ". Replace it with the values currently entered?"
+        ),
+        footer = tagList(
+          modalButton("Cancel"),
+          actionButton("confirm_replace", "Replace saved test")
+        )
+      ))
+      return(NULL)
+    }
+
+    history_data(upsert_history_record(history_data(), record))
     save_status_message("Test saved to session history. Download your CSV if you want to keep this data.")
     showNotification("Current test saved to session history.", type = "message")
+  })
+
+  observeEvent(input$confirm_replace, {
+    record <- pending_record()
+    req(!is.null(record))
+
+    history_data(upsert_history_record(history_data(), record))
+    pending_record(NULL)
+    removeModal()
+    save_status_message("Saved test replaced. Download your CSV if you want to keep this data.")
+    showNotification("Saved test replaced.", type = "message")
   })
 
   observeEvent(input$upload_history, {
@@ -1086,7 +1146,7 @@ server <- function(input, output, session) {
     }
 
     if (is.null(input$history_table_rows_selected) || length(input$history_table_rows_selected) == 0) {
-      return(tags$span("Select one saved row if you want to delete it."))
+      return(tags$span("Select one saved row to load or delete it."))
     }
 
     selected_row <- input$history_table_rows_selected[1]
@@ -1102,6 +1162,45 @@ server <- function(input, output, session) {
     )
   })
 
+    # Load the selected saved record into the entry form for editing. Saving it
+  # again under the same athlete and start date asks to replace the original.
+  observeEvent(input$load_selected_test, {
+    hist <- history_data()
+    selected <- input$history_table_rows_selected
+
+    if (nrow(hist) == 0 || is.null(selected) || length(selected) == 0) {
+      showNotification("Select one saved row before loading.", type = "warning")
+      return(NULL)
+    }
+
+    record <- hist[selected[1], ]
+
+    # Optional text fields can be missing in uploaded files; show them as blank.
+    text_or_blank <- function(x) if (is.na(x)) "" else as.character(x)
+
+    updateTextInput(session, "athlete_name", value = record$athlete_name)
+    updateDateInput(session, "test_date", value = record$test_date)
+    updateTextInput(session, "ergometer_type", value = text_or_blank(record$ergometer_type))
+    updateTextAreaInput(session, "notes", value = text_or_blank(record$notes))
+    updateCheckboxInput(session, "protocol_confirmed", value = isTRUE(record$protocol_confirmed))
+    updateSelectInput(
+      session, "test_validity_flag",
+      selected = if (is.na(record$test_validity_flag)) "Complete" else record$test_validity_flag
+    )
+    updateNumericInput(session, "power_45s", value = record$power_45s)
+    updateNumericInput(session, "power_3min", value = record$power_3min)
+    updateNumericInput(session, "power_6min", value = record$power_6min)
+    updateNumericInput(session, "power_10min", value = record$power_10min)
+    updateNumericInput(session, "power_20min", value = record$power_20min)
+
+    updateNavbarPage(session, "main_tabs", selected = "Current Test Entry")
+    save_status_message(paste0(
+      "Loaded the saved test for ", record$athlete_name,
+      " (", format(record$test_date), "). Edit the values, then save to replace it. ",
+      "Changing the name or start date saves a separate record instead."
+    ))
+  })
+  
   observeEvent(input$delete_selected_test, {
     hist <- history_data()
 
@@ -1120,7 +1219,9 @@ server <- function(input, output, session) {
     selected_row <- selected[1]
     deleted_record <- hist[selected_row, ]
 
-    updated <- hist[-selected_row, , drop = FALSE]
+    # Recompute the rest, since removing a record can change the history
+    # checks on later ones (D-011).
+    updated <- recompute_uploaded_history(hist[-selected_row, , drop = FALSE])
     history_data(updated)
 
     showNotification(
