@@ -661,7 +661,17 @@ protocol_html <- HTML(
     "<li>The effort was maximal for that duration.</li>",
     "<li>Conditions were reasonably standardized.</li>",
     "<li>The test was not obviously distorted by fatigue, illness, or setup problems.</li>",
-    "</ul>"
+    "</ul>",
+    "<h4>Recording and Saving Your Results</h4>",
+    "<ol>",
+    "<li>Write down the average watts at the end of each test. Use the watts reading, not calories or pace.</li>",
+    "<li>After the final test, enter all 5 results on the Current Test Entry tab.</li>",
+    "<li>Review any warnings, then save the test to history.</li>",
+    "<li>Download your history CSV from the Import / Export tab. The app does not keep data after you close it.</li>",
+    "<li>Next time, upload that file before entering your new block, so comparisons and history checks work.</li>",
+    "</ol>",
+    "<h4>What the Results Mean</h4>",
+    "<p>Your profile is an estimate based on your field tests. The app does not directly measure lactate threshold, ventilatory thresholds, VO2max, or metabolic zones.</p>"
   )
 )
 
@@ -673,72 +683,12 @@ ui <- navbarPage(
   title = "Power-Duration App",
 
   tabPanel(
-    "Testing Protocol",
-    fluidPage(
-      HTML(protocol_html)
-    )
-  ),
-
-  tabPanel(
-    "How to Use This App",
-    fluidPage(
-      h3("What This App Does"),
-      p("This app estimates your power-duration profile using five maximal efforts."),
-      p("It helps you track changes over time and generate practical training targets."),
-      p("It does not directly measure physiological thresholds."),
-
-      h3("Testing Workflow"),
-      p("Complete the five required maximal efforts across the testing window shown in the Testing Protocol tab."),
-      tags$ul(
-        tags$li("45 seconds"),
-        tags$li("3 minutes"),
-        tags$li("6 minutes"),
-        tags$li("10 minutes"),
-        tags$li("20 minutes")
-      ),
-      p("Each effort should be a true maximal average effort for the full duration."),
-
-      h3("Enter Data Manually"),
-      p("Use the Current Test Entry tab to enter one full test profile."),
-      p("Include all five power values. Add ergometer type and notes if they help you interpret the result."),
-      p("Click Save Current Test to History to store the test and calculate the model outputs."),
-
-      h3("Upload Data with a CSV"),
-      p("Most first-time users will enter data manually. Use CSV import only if you want to restore prior history or manage your data outside the app."),
-      p("This app does not store your data between sessions. If you want to track progress over time, download your history and re-upload it when you return."),
-      tags$ol(
-        tags$li("Click Download Example CSV if you want a simple starting file."),
-        tags$li("Or use a previously downloaded history CSV if you want to continue from prior tests."),
-        tags$li("Edit the core input fields you want to manage directly."),
-        tags$li("Upload the file in the Import / Export tab."),
-        tags$li("Add your new test values after upload if needed, then save again.")
-      ),
-      p("Required columns: athlete_name, test_date, power_45s, power_3min, power_6min, power_10min, power_20min."),
-      p("Optional columns: ergometer_type, notes."),
-      p("The app calculates derived values after upload."),
-      p("Uploading a CSV replaces the current session history."),
-
-      h3("Read the Outputs"),
-      p("Use the Current Test Entry tab to view the current profile, summary values, and predicted powers."),
-      p("Use the Historical Comparison tab to compare the current test to the most recent prior saved test for the same athlete and to view trends across saved tests."),
-      p("Use the Training Targets tab to view practical training anchors derived from the profile."),
-
-      h3("Important Notes"),
-      tags$ul(
-        tags$li("Use the same ergometer when possible."),
-        tags$li("Use consistent testing conditions."),
-        tags$li("Make each effort truly maximal."),
-        tags$li("Estimated values are model-based outputs, not direct physiological measurements.")
-      )
-    )
-  ),
-
-  tabPanel(
     "Current Test Entry",
     sidebarLayout(
       sidebarPanel(
         h4("Enter Current Test"),
-        p("New user? Start with the Testing Protocol tab."),
+        p("New user? Read the Testing Protocol tab before your first testing block."),
+        p("After the block, enter all 5 results here. The profile updates as you type. Save it to add it to this session's history."),
         textInput("athlete_name", "Athlete name"),
         dateInput("test_date", "Test date", value = Sys.Date()),
         textInput("ergometer_type", "Ergometer type (optional)", value = ""),
@@ -762,6 +712,7 @@ ui <- navbarPage(
         textOutput("save_status")
       ),
       mainPanel(
+        uiOutput("completion_status"),
         uiOutput("validation_box"),
         plotOutput("pd_plot", height = "430px"),
         tags$small("Points = your tested results. Solid line = fitted estimate within your tested range. Dashed line = extrapolated estimate beyond 20 min."),
@@ -775,8 +726,7 @@ ui <- navbarPage(
             6,
             h4("Current Summary"),
             tableOutput("summary_table")
-          ),
-          column(6, h4("Predicted Powers"), tableOutput("prediction_table"))
+          )
         )
       )
     )
@@ -814,21 +764,20 @@ ui <- navbarPage(
       tags$small("Each category shows 2 anchor durations with an estimated power for each. Treat them as practical starting references derived from your profile."),
       tags$br(),
       tags$small("Use repeatability and workout response to adjust them."),
-      tableOutput("training_targets_table")
+      tableOutput("training_targets_table"),
+      h4("Predicted power by duration"),
+      tags$small("Values from 1 to 15 min are modeled from your 5 tests. The 30 and 60 min values extend beyond your longest test and carry more uncertainty."),
+      tableOutput("prediction_table")
     )
   ),
 
   tabPanel(
-    "Predicted Power by Duration",
+    "Testing Protocol",
     fluidPage(
-      h3("Predicted Power by Duration"),
-      numericInput("custom_duration_sec", "Duration (seconds)", value = 600, min = 1, step = 1),
-      tags$small("Estimate from your fitted profile. Use it as a planning reference, not an exact prediction."),
-      br(), br(),
-      uiOutput("custom_duration_prediction")
+      HTML(protocol_html)
     )
   ),
-
+  
   tabPanel(
     "Import / Export",
     fluidPage(
@@ -844,6 +793,7 @@ ui <- navbarPage(
       p("You only need to edit the core input fields: athlete name, test date, power values, ergometer type, and notes."),
       p("All other fields will be recalculated automatically when you upload the file."),
       helpText("If you are unsure, start from the Example CSV instead of editing a previous download."),
+      p("Required columns: athlete_name, test_date, power_45s, power_3min, power_6min, power_10min, power_20min."),
       fluidRow(
         column(
           width = 6,
@@ -915,6 +865,40 @@ server <- function(input, output, session) {
     build_training_targets(current_predictions(), current_secondary_metrics())
   })
 
+  # Completion status: how many of the 5 results are entered, and what the
+  # user should do next. Shown at the top of Current Test Entry.
+  output$completion_status <- renderUI({
+    test_row <- current_inputs()
+    watts <- c(
+      test_row$power_45s, test_row$power_3min, test_row$power_6min,
+      test_row$power_10min, test_row$power_20min
+    )
+    n_entered <- sum(!is.na(watts))
+    has_name <- !is.na(test_row$athlete_name) && test_row$athlete_name != ""
+    has_date <- !is.na(test_row$test_date)
+    n_errors <- length(current_validation()$errors)
+
+    next_action <- if (n_entered < 5 || !has_name || !has_date) {
+      n_missing <- 5 - n_entered
+      missing <- c(
+        if (!has_name) "athlete name",
+        if (!has_date) "date",
+        if (n_missing > 0) paste0(n_missing, " more test result", if (n_missing == 1) "" else "s")
+      )
+      paste0("Next: enter ", paste(missing, collapse = ", "), ".")
+    } else if (n_errors > 0) {
+      "Next: fix the blocking issues listed below."
+    } else {
+      "Next: review the profile, then save it to history. Download your history from Import / Export to keep it."
+    }
+
+    tags$div(
+      style = "padding:10px; background-color:#f4f6f8; border:1px solid #d8dee4; margin-bottom:15px;",
+      tags$strong(paste0(n_entered, " of 5 test results entered. ")),
+      next_action
+    )
+  })
+  
   output$validation_box <- renderUI({
     v <- current_validation()
 
@@ -1037,36 +1021,13 @@ server <- function(input, output, session) {
     validate(
       need(length(current_validation()$errors) == 0, "Fix the blocking issues to view predicted powers.")
     )
-    current_predictions()
-  }, striped = TRUE, bordered = TRUE, spacing = "s")
-
-  output$custom_duration_prediction <- renderUI({
-    if (length(current_validation()$errors) > 0) {
-      return(tags$p("Enter a valid current test profile to view this estimate."))
-    }
-
-    duration_sec <- input$custom_duration_sec
-
-    if (is.null(duration_sec) || !is.finite(duration_sec) || duration_sec <= 0) {
-      return(tags$p("Enter a duration greater than 0 seconds."))
-    }
-
-    if (duration_sec < 45 || duration_sec > 3600) {
-      return(tags$p("Enter a duration between 45 and 3600 seconds for a restrained estimate."))
-    }
-
-    predicted_power_w <- exp(
-      predict(
-        current_model_fit()$model,
-        newdata = tibble(duration_sec = duration_sec)
+    current_predictions() %>%
+      transmute(
+        Duration = duration,
+        `Estimated power (W)` = predicted_power_w,
+        `Estimate type` = estimate_type
       )
-    )
-
-    tags$div(
-      h4(paste0(round(predicted_power_w, 0), " W")),
-      tags$small(paste0("Estimated average power for ", round(duration_sec, 0), " seconds."))
-    )
-  })
+  }, striped = TRUE, bordered = TRUE, spacing = "s", digits = 0)
 
   observeEvent(input$save_test, {
     v <- current_validation()
