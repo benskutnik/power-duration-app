@@ -1,7 +1,8 @@
 
 # app.R
 # Power-Duration Relationship App
-# Version 1 rebuild based on the master build spec
+# Version 1.1. See CHANGELOG.md for changes and docs/DECISIONS.md for the
+# reasoning behind the rules in this file.
 
 # ------------------------------
 # Packages

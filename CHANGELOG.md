@@ -2,7 +2,7 @@
 
 User-facing changes to the Power-Duration App.
 
-## Unreleased
+## 1.1.0 (2026-10-20)
 
 ### Added
 
