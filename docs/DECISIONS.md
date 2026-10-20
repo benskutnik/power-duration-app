@@ -2,7 +2,7 @@
 
 Each entry records what was decided, why, and what it replaced. Where entries conflict with the planning documents, these entries control.
 
-**Source-of-truth order:** this log, then `resolved_v1_spec.md`, then `10_master_build_spec.md`, then documents 01 to 09 and the blueprint.
+**Source-of-truth order:** this log, then `resolved_v1_spec.md`, then `10_master_build_spec.md`, then documents 01 to 08 and the blueprint.
 
 **Status values:** Decided (approved, not yet built), Implemented (built on branch `v1-resolved-spec`), Review scheduled (decided, with a planned recheck).
 

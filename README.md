@@ -2,7 +2,7 @@
 
 A Shiny app that estimates a practical power-duration profile from 5 maximal field tests on an ergometer.
 
-**Use the app:** [YOUR CONNECT CLOUD URL]
+**Use the app:** https://benskutnik-power-duration-app.share.connect.posit.cloud
 
 ## Who it's for
 
