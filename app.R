@@ -65,13 +65,48 @@ steep_decline_limits <- c(NA, 0.25, 0.20, 0.20) # D-007: 3-6, 6-10, 10-20 min de
 curve_shape_limit <- 0.04                       # D-007: interior points vs quadratic fit
 history_mismatch_limit <- 0.08                  # D-007: any duration vs baseline record
 
+# Context flags and their retest levels (D-008):
+# 1 = Keep, but interpret cautiously; 2 = Retest suggested; 3 = Retest recommended.
+context_flag_levels <- c(
+  "Interrupted or failed effort" = 3,
+  "Illness" = 2,
+  "Hard training between tests" = 2,
+  "Pacing problems" = 2,
+  "Equipment or setup issues" = 2,
+  "Poor sleep" = 1,
+  "Unusual soreness" = 1,
+  "Disrupted warm-up" = 1
+)
+
+# Equipment dropdown options (D-014). "Not specified" is stored as blank.
+equipment_options <- c(
+  "Not specified",
+  "Rogue Echo Bike v1",
+  "Rogue Echo Bike v2",
+  "Rogue Echo Bike v3",
+  "Rogue Echo Rower",
+  "AssaultBike Classic",
+  "AssaultBike Pro X",
+  "AssaultBike Elite",
+  "AssaultRower",
+  "Concept2 Rower",
+  "Concept2 SkiErg",
+  "Concept2 BikeErg",
+  "Wattbike Atom",
+  "Wattbike AtomX",
+  "Wattbike Proton",
+  "Wattbike AirPro",
+  "Wattbike Nucleus",
+  "Other"
+)
+
 history_required_cols <- c(
   "athlete_name", "test_date", "power_45s", "power_3min", "power_6min",
   "power_10min", "power_20min"
 )
 
 history_optional_cols <- c(
-  "notes", "ergometer_type", "protocol_confirmed", "test_validity_flag",
+  "notes", "ergometer_type", "protocol_confirmed", "test_validity_flag", "context_flags",
   "estimated_cp", "estimated_w_prime", "power_law_a", "power_law_b",
   "predicted_power_1min", "predicted_power_2min", "predicted_power_4min",
   "predicted_power_8min", "predicted_power_12min", "predicted_power_15min",
@@ -96,6 +131,7 @@ empty_history <- function() {
     ergometer_type = character(),
     protocol_confirmed = logical(),
     test_validity_flag = character(),
+    context_flags = character(),
     estimated_cp = numeric(),
     estimated_w_prime = numeric(),
     power_law_a = numeric(),
@@ -140,9 +176,12 @@ build_test_dataframe <- function(input_list) {
     power_10min = suppressWarnings(as.numeric(input_list$power_10min)),
     power_20min = suppressWarnings(as.numeric(input_list$power_20min)),
     notes = trimws(as.character(input_list$notes)),
-    ergometer_type = trimws(as.character(input_list$ergometer_type)),
+    # "Not specified" in the dropdown is stored as blank (D-014).
+    ergometer_type = if (identical(input_list$ergometer_type, "Not specified")) "" else trimws(as.character(input_list$ergometer_type)),
     protocol_confirmed = isTRUE(input_list$protocol_confirmed),
-    test_validity_flag = as.character(input_list$test_validity_flag)
+    test_validity_flag = as.character(input_list$test_validity_flag),
+    # Checked context flags, stored as one field separated by "; " (D-008).
+    context_flags = paste(input_list$context_flags, collapse = "; ")
   )
 }
 
@@ -176,6 +215,24 @@ equipment_comparable <- function(a, b) {
 
 describe_equipment <- function(x) {
   if (normalize_equipment(x) == "") "unspecified equipment" else as.character(x)
+}
+
+
+# Match stored equipment text to a dropdown option, ignoring case (D-012).
+# Blank means not specified; anything unrecognized becomes "Other".
+match_equipment <- function(x) {
+  key <- normalize_equipment(x)
+  if (key == "") return("Not specified")
+  hit <- equipment_options[tolower(equipment_options) == key]
+  if (length(hit) == 1) hit else "Other"
+}
+
+# Context flags are stored as one text field separated by "; " (D-008).
+# Split it back into individual flag names.
+split_context_flags <- function(x) {
+  if (length(x) == 0 || is.na(x) || x == "") return(character())
+  parts <- trimws(strsplit(as.character(x), ";")[[1]])
+  parts[parts != ""]
 }
 
 # The baseline for history checks and comparisons is the most recent earlier
@@ -318,6 +375,18 @@ validate_test_values <- function(test_row, history_df = NULL) {
     flags <- c(flags, "user_marked")
   }
 
+  # Context flags (D-008). An interrupted or failed effort withholds outputs,
+  # like a compromised session. The other flags raise the retest level below.
+  reported_flags <- split_context_flags(test_row$context_flags)
+
+  if ("Interrupted or failed effort" %in% reported_flags) {
+    withheld_reasons <- c(
+      withheld_reasons,
+      "You reported an interrupted or failed effort, so model outputs are withheld. If you repeated that effort and entered the new result, uncheck this flag."
+    )
+    flags <- c(flags, "interrupted_effort")
+  }
+
   # Layer 3: soft warnings (D-007), only for profiles that will be modeled.
   if (length(errors) == 0 && length(withheld_reasons) == 0) {
     declines <- 1 - watts[2:5] / watts[1:4]
@@ -369,6 +438,13 @@ validate_test_values <- function(test_row, history_df = NULL) {
       add_warning(
         "Protocol adherence isn't confirmed. Interpret results more cautiously if the schedule or standardization rules weren't followed.",
         1, "protocol_unconfirmed"
+      )
+    }
+
+    for (flag_name in intersect(reported_flags, names(context_flag_levels))) {
+      add_warning(
+        paste0("You reported \"", flag_name, "\" for this testing block. It may have affected your results."),
+        context_flag_levels[[flag_name]], "context_flag"
       )
     }
 
@@ -587,6 +663,7 @@ make_profile_record <- function(test_row, validation_result, model_fit = NULL,
     ergometer_type = test_row$ergometer_type,
     protocol_confirmed = test_row$protocol_confirmed,
     test_validity_flag = test_row$test_validity_flag,
+    context_flags = test_row$context_flags,
     estimated_cp = if (is.null(cp_metrics)) NA_real_ else cp_metrics$cp_w,
     estimated_w_prime = if (is.null(cp_metrics)) NA_real_ else cp_metrics$wprime_j,
     power_law_a = if (is.null(model_fit)) NA_real_ else model_fit$a,
@@ -617,7 +694,8 @@ recompute_history_record <- function(row, history_df = empty_history()) {
     notes = if ("notes" %in% names(row)) as.character(row$notes) else "",
     ergometer_type = if ("ergometer_type" %in% names(row)) as.character(row$ergometer_type) else "",
     protocol_confirmed = if ("protocol_confirmed" %in% names(row)) as.logical(row$protocol_confirmed) else TRUE,
-    test_validity_flag = if ("test_validity_flag" %in% names(row)) as.character(row$test_validity_flag) else "Complete"
+    test_validity_flag = if ("test_validity_flag" %in% names(row)) as.character(row$test_validity_flag) else "Complete",
+    context_flags = if ("context_flags" %in% names(row) && !is.na(row$context_flags)) as.character(row$context_flags) else ""
   )
 
   validation_result <- validate_test_values(test_row, history_df)
@@ -862,9 +940,14 @@ ui <- navbarPage(
         textInput("athlete_name", "Athlete name"),
         dateInput("test_date", "Testing block start date", value = Sys.Date()),
         helpText("The day you did the 45-second test."),
-        textInput("ergometer_type", "Ergometer type (optional)", value = ""),
-        textAreaInput("notes", "Notes (optional)", rows = 3, placeholder = "Pacing notes, fatigue, sleep, setup issues, or anything unusual"),
-        checkboxInput("protocol_confirmed", "I followed the testing protocol closely", value = TRUE),
+        selectInput("ergometer_type", "Ergometer", choices = equipment_options, selected = "Not specified"),
+        checkboxInput("protocol_confirmed", "I followed the testing protocol closely", value = FALSE),
+        checkboxGroupInput(
+          "context_flags",
+          "Did anything affect this testing block? (optional)",
+          choices = names(context_flag_levels)
+        ),
+        textAreaInput("notes", "Notes (optional)", rows = 3, placeholder = "Anything else worth recording about this block"),
         selectInput(
           "test_validity_flag",
           "Test validity flag",
@@ -1009,7 +1092,8 @@ server <- function(input, output, session) {
       notes = input$notes,
       ergometer_type = input$ergometer_type,
       protocol_confirmed = input$protocol_confirmed,
-      test_validity_flag = input$test_validity_flag
+      test_validity_flag = input$test_validity_flag,
+      context_flags = input$context_flags
     ))
   })
 
@@ -1377,9 +1461,10 @@ server <- function(input, output, session) {
 
     updateTextInput(session, "athlete_name", value = record$athlete_name)
     updateDateInput(session, "test_date", value = record$test_date)
-    updateTextInput(session, "ergometer_type", value = text_or_blank(record$ergometer_type))
+    updateSelectInput(session, "ergometer_type", selected = match_equipment(record$ergometer_type))
     updateTextAreaInput(session, "notes", value = text_or_blank(record$notes))
     updateCheckboxInput(session, "protocol_confirmed", value = isTRUE(record$protocol_confirmed))
+    updateCheckboxGroupInput(session, "context_flags", selected = split_context_flags(record$context_flags))
     updateSelectInput(
       session, "test_validity_flag",
       selected = if (is.na(record$test_validity_flag)) "Complete" else record$test_validity_flag

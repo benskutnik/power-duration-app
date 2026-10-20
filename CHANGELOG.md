@@ -14,6 +14,8 @@ User-facing changes to the Power-Duration App.
 - Results with an ordering problem or a likely entry error, and sessions marked Compromised or Retest needed, show the entered values without a fitted curve, CP/W′, predictions, or targets. They can be saved as compromised records for review.
 - A 20-minute value above 600 W is flagged as likely not watts, such as a calories reading.
 - Historical Comparison overlays the current profile's curve on the previous comparable test's curve.
+- A checklist on Current Test Entry records conditions that may have affected the testing block, such as illness or poor sleep. Each one raises the retest guidance, and an interrupted or failed effort withholds model outputs.
+- Ergometer is a dropdown of common machines, plus Not specified and Other.
 
 ### Changed
 
@@ -30,6 +32,8 @@ User-facing changes to the Power-Duration App.
 - History checks and comparisons use the most recent earlier test with a normal profile on the same equipment. A test on different equipment is noted instead of compared by wattage.
 - The history table shows each test's validity flag and retest guidance.
 - Estimated CP and W′ appear together or not at all.
+- The "I followed the testing protocol closely" box starts unchecked, so confirming it is a deliberate choice.
+- History CSV files include `context_flags` and `retest_level` columns.
 
 ### Removed
 

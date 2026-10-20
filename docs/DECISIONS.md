@@ -42,7 +42,7 @@ Tabs, in order: Current Test Entry, Historical Comparison, Training Targets, Tes
 
 ## D-005: Gross-outlier check
 
-**Date:** 2026-10-19 | **Status:** Decided
+**Date:** 2026-10-19 | **Status:** Implemented (Step 6)
 
 Implemented as an adjacent-pair ratio check (shorter-duration power ÷ longer-duration power). A single pair cannot show which value is the typo, so the message names both.
 
@@ -59,7 +59,7 @@ A suspected entry error withholds model outputs. The user corrects the entry or 
 
 ## D-006: Hard input errors versus pattern blocks
 
-**Date:** 2026-10-19 | **Status:** Decided
+**Date:** 2026-10-19 | **Status:** Implemented (Step 6)
 
 | Type | Triggers | Saving |
 | ----- | ----- | ----- |
@@ -70,7 +70,7 @@ A suspected entry error withholds model outputs. The user corrects the entry or 
 
 ## D-007: Soft-warning thresholds
 
-**Date:** 2026-10-19 | **Status:** Decided; Review scheduled
+**Date:** 2026-10-19 | **Status:** Implemented (Step 6); Review scheduled
 
 | Check | Rule | Retest level |
 | ----- | ----- | ----- |
@@ -109,7 +109,7 @@ The new curve-shape rule caught a 10% error at an interior point about 84% of th
 
 ## D-008: Context flags
 
-**Date:** 2026-10-19 | **Status:** Decided
+**Date:** 2026-10-19 | **Status:** Implemented (Step 7)
 
 `context_flags` is a multi-select stored as one text field, separated by "; ". The combined "interrupted efforts or warm-ups" flag is split in two.
 
@@ -130,7 +130,7 @@ An interrupted or failed effort withholds model outputs, the same as a session m
 
 ## D-009: Retest level and confidence summary
 
-**Date:** 2026-10-19 | **Status:** Decided
+**Date:** 2026-10-19 | **Status:** Implemented (Step 6)
 
 `retest_level` is the highest level any rule triggers. The prototype's "2 or more warnings = Retest suggested" rule is removed.
 
@@ -147,7 +147,7 @@ Retest recommended always means model outputs are withheld. It applies to hard i
 
 ## D-010: Historical baseline
 
-**Date:** 2026-10-19 | **Status:** Decided
+**Date:** 2026-10-19 | **Status:** Implemented (Step 6)
 
 A record's baseline is the most recent earlier record (by start date) for the same athlete that is not compromised and is equipment-comparable. Equipment is comparable when both records name the same equipment or both leave it unspecified. "Other" is never comparable, including to another "Other." When the preceding valid record used different equipment, the app discloses the difference instead of issuing a wattage-based warning.
 
@@ -192,9 +192,11 @@ The profile key uses the athlete name trimmed, with internal spaces collapsed, c
 
 ## D-014: Equipment dropdown
 
-**Date:** 2026-10-19 | **Status:** Decided
+**Date:** 2026-10-19 | **Status:** Implemented (Step 7)
 
-Options: Not specified, Rogue Echo Bike v1, Rogue Echo Bike v2, Rogue Echo Bike v3, AssaultBike Classic, AssaultBike Pro X, AssaultBike Elite, AssaultRower, Concept2 Rower, Concept2 SkiErg, Concept2 BikeErg, Other. Each Echo Bike version counts as different equipment.
+Options: Not specified, Rogue Echo Bike v1, Rogue Echo Bike v2, Rogue Echo Bike v3, Rogue Echo Rower, AssaultBike Classic, AssaultBike Pro X, AssaultBike Elite, AssaultRower, Concept2 Rower, Concept2 SkiErg, Concept2 BikeErg, Wattbike Atom, Wattbike AtomX, Wattbike Proton, Wattbike AirPro, Wattbike Nucleus, Other. Each listed model counts as different equipment, including each Echo Bike version.
+
+The Rogue Echo Rower and the 5 Wattbike models were added on 2026-10-19 during implementation.
 
 ## D-015: Testing block start date
 
@@ -206,13 +208,13 @@ Label: "Testing block start date," with helper text "The day you did the 45-seco
 
 ## D-016: Profile-shape comparison
 
-**Date:** 2026-10-19 | **Status:** Decided
+**Date:** 2026-10-19 | **Status:** Implemented (Step 6)
 
 Historical Comparison overlays the current fitted curve and points on the baseline record's curve and points. It appears only when both produce a normal profile.
 
 ## D-017: Ordering failures
 
-**Date:** 2026-10-19 | **Status:** Decided
+**Date:** 2026-10-19 | **Status:** Implemented (Step 6)
 
 Simulation suggests about 6% of honest testing blocks may break the descending order through normal variation, mostly between 10 and 20 min. The message names the failing pair and suggests retesting that effort. The user loads the record, replaces the one value, and saves it under the same start date. This uses the existing replace workflow and does not add a partial-profile mode.
 
