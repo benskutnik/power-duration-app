@@ -198,7 +198,7 @@ Options: Not specified, Rogue Echo Bike v1, Rogue Echo Bike v2, Rogue Echo Bike 
 
 ## D-015: Testing block start date
 
-**Date:** 2026-10-19 | **Status:** Decided
+**Date:** 2026-10-19 | **Status:** Implemented (Step 4)
 
 Label: "Testing block start date," with helper text "The day you did the 45-second test." The app does not check whether it's a Monday. The weekday schedule is presented as a suggested cadence.
 

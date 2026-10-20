@@ -102,7 +102,9 @@ build_example_upload_csv <- function() {
 build_test_dataframe <- function(input_list) {
   tibble(
     athlete_name = trimws(as.character(input_list$athlete_name)),
-    test_date = as.Date(input_list$test_date),
+    # An emptied date field arrives as a zero-length value. Convert it to NA
+    # so the row stays intact and validation can report the missing date.
+    test_date = if (length(input_list$test_date) == 0) as.Date(NA) else as.Date(input_list$test_date),
     power_45s = suppressWarnings(as.numeric(input_list$power_45s)),
     power_3min = suppressWarnings(as.numeric(input_list$power_3min)),
     power_6min = suppressWarnings(as.numeric(input_list$power_6min)),
@@ -147,7 +149,7 @@ validate_test_values <- function(test_row, history_df = NULL) {
   }
 
   if (is.na(test_row$test_date)) {
-    errors <- c(errors, "Test date is required.")
+    errors <- c(errors, "Testing block start date is required.")
   }
 
   if (any(is.na(watts))) {
@@ -306,7 +308,7 @@ build_summary_table <- function(test_row, model_fit, cp_metrics, validation_resu
   tibble(
     metric = c(
       "Athlete",
-      "Test date",
+      "Block start date",
       "45 s power",
       "3 min power",
       "6 min power",
@@ -616,9 +618,10 @@ format_duration_label <- function(sec) {
 protocol_html <- HTML(
   paste0(
     "<h3>11-Day Testing Window</h3>",
-    "<p>Complete five maximal efforts across an 11-day testing window.</p>",
+    "<p>Complete 5 maximal efforts over about 11 days, shortest to longest. The weekdays below are a suggested cadence. If your schedule differs, keep similar spacing: the first 3 tests 2 days apart, then 3 days before each of the last 2.</p>",
+    "<p>The day of your 45-second test is your testing block start date. Enter it on the Current Test Entry tab.</p>",
     "<table class='table table-bordered'>",
-    "<thead><tr><th>Week</th><th>Day</th><th>Session</th></tr></thead>",
+    "<thead><tr><th>Week</th><th>Suggested day</th><th>Session</th></tr></thead>",
     "<tbody>",
     "<tr><td>1</td><td>Monday</td><td>45-second maximal effort</td></tr>",
     "<tr><td>1</td><td>Wednesday</td><td>3-minute maximal effort</td></tr>",
@@ -690,7 +693,8 @@ ui <- navbarPage(
         p("New user? Read the Testing Protocol tab before your first testing block."),
         p("After the block, enter all 5 results here. The profile updates as you type. Save it to add it to this session's history."),
         textInput("athlete_name", "Athlete name"),
-        dateInput("test_date", "Test date", value = Sys.Date()),
+        dateInput("test_date", "Testing block start date", value = Sys.Date()),
+        helpText("The day you did the 45-second test."),
         textInput("ergometer_type", "Ergometer type (optional)", value = ""),
         textAreaInput("notes", "Notes (optional)", rows = 3, placeholder = "Pacing notes, fatigue, sleep, setup issues, or anything unusual"),
         checkboxInput("protocol_confirmed", "I followed the testing protocol closely", value = TRUE),
@@ -790,7 +794,7 @@ ui <- navbarPage(
       helpText("The example file includes the fields you should manage directly, including ergometer type. The app calculates derived values after upload."),
       p(strong("About the downloaded CSV")),
       p("The downloaded file includes your original test data and additional calculated values."),
-      p("You only need to edit the core input fields: athlete name, test date, power values, ergometer type, and notes."),
+      p("You only need to edit the core input fields: athlete name, testing block start date (the test_date column), power values, ergometer type, and notes."),
       p("All other fields will be recalculated automatically when you upload the file."),
       helpText("If you are unsure, start from the Example CSV instead of editing a previous download."),
       p("Required columns: athlete_name, test_date, power_45s, power_3min, power_6min, power_10min, power_20min."),
@@ -882,7 +886,7 @@ server <- function(input, output, session) {
       n_missing <- 5 - n_entered
       missing <- c(
         if (!has_name) "athlete name",
-        if (!has_date) "date",
+        if (!has_date) "start date",
         if (n_missing > 0) paste0(n_missing, " more test result", if (n_missing == 1) "" else "s")
       )
       paste0("Next: enter ", paste(missing, collapse = ", "), ".")
@@ -1167,7 +1171,7 @@ server <- function(input, output, session) {
       hist %>%
         transmute(
           athlete_name,
-          test_date = as.character(test_date),
+          `Block start date` = as.character(test_date),
           `45 s` = power_45s,
           `3 min` = power_3min,
           `6 min` = power_6min,
@@ -1210,7 +1214,7 @@ server <- function(input, output, session) {
       labs(
         title = "Historical Trends",
         subtitle = "All fixed-duration powers plus estimated critical power",
-        x = "Test date",
+        x = "Testing block start date",
         y = "Average power (W)",
         color = "Metric"
       ) +
