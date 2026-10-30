@@ -15,6 +15,7 @@ library(scales)
 library(tidyr)
 library(DT)
 library(bslib)
+library(ggrepel)
 
 # Footer link. Change it here when the site moves to benskutnik.com.
 site_url <- "https://benskutnik.ghost.io/?ref=power-duration-app"
@@ -1386,8 +1387,7 @@ server <- function(input, output, session) {
       )
     }
 
-    profile_df <- current_profile() %>%
-      mutate(label_y = power_w + if_else(duration_sec == 45, 0, 8))
+    profile_df <- current_profile()
     model_fit <- current_model_fit()
     curve_df <- model_fit$curve
 
@@ -1396,6 +1396,13 @@ server <- function(input, output, session) {
     longest_test_sec <- max(test_durations)
     curve_tested <- curve_df %>% filter(duration_sec <= longest_test_sec)
     curve_extrapolated <- curve_df %>% filter(duration_sec >= longest_test_sec)
+
+    # Watt labels plus the curve as blank labels, so ggrepel keeps the
+    # labels off the curve and inside the plot area.
+    label_df <- bind_rows(
+      profile_df %>% transmute(duration_sec, y = power_w, label = paste0(round(power_w, 0), " W")),
+      curve_df %>% transmute(duration_sec, y = pred_power_w, label = "")
+    )
 
     ggplot() +
       annotate(
@@ -1430,15 +1437,19 @@ server <- function(input, output, session) {
         aes(x = duration_sec, y = power_w),
         size = 3
       ) +
-      geom_text(
-        data = profile_df,
-        aes(x = duration_sec, y = label_y, label = paste0(round(power_w, 0), " W")),
-        vjust = -0.7,
-        size = 4
+      geom_text_repel(
+        data = label_df,
+        aes(x = duration_sec, y = y, label = label),
+        size = 4,
+        box.padding = 0.5,
+        max.overlaps = Inf,
+        segment.colour = "#8A8A8A",
+        seed = 1
       ) +
       scale_x_log10(
         breaks = c(45, 180, 360, 600, 1200, 1800, 3600),
-        labels = c("45 s", "3 min", "6 min", "10 min", "20 min", "30 min", "60 min")
+        labels = c("45 s", "3 min", "6 min", "10 min", "20 min", "30 min", "60 min"),
+        guide = guide_axis(check.overlap = TRUE)
       ) +
       scale_y_continuous(
         limits = c(0, NA),
@@ -1450,9 +1461,13 @@ server <- function(input, output, session) {
         subtitle = "Measured test points with a descriptive fitted curve",
         x = "Duration",
         y = "Average power (W)",
-        caption = "The curve is a descriptive fit for practical use. It is not a direct physiological measurement."
+        caption = "The curve is a descriptive fit for practical use.\nIt is not a direct physiological measurement."
       ) +
-      theme_minimal(base_size = 13)
+      theme_minimal(base_size = 13) +
+      theme(
+        plot.caption = element_text(hjust = 0, colour = "#666666"),
+        plot.caption.position = "plot"
+      )
   })
 
   output$summary_table <- renderTable({
