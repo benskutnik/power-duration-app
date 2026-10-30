@@ -1773,32 +1773,43 @@ server <- function(input, output, session) {
     baseline_label <- paste0("Previous (", format(baseline$test_date), ")")
     longest_test_sec <- max(test_durations)
 
+    # Previous comes first so the current test draws on top of it.
+    test_levels <- c(baseline_label, "Current")
+
     points_df <- bind_rows(
-      current_profile() %>% mutate(test = "Current"),
-      to_long_profile(baseline) %>% mutate(test = baseline_label)
-    )
+      to_long_profile(baseline) %>% mutate(test = baseline_label),
+      current_profile() %>% mutate(test = "Current")
+    ) %>%
+      mutate(test = factor(test, levels = test_levels))
 
     curves_df <- bind_rows(
-      current_model_fit()$curve %>% mutate(test = "Current"),
-      fit_power_duration_model(to_long_profile(baseline))$curve %>% mutate(test = baseline_label)
+      fit_power_duration_model(to_long_profile(baseline))$curve %>% mutate(test = baseline_label),
+      current_model_fit()$curve %>% mutate(test = "Current")
     ) %>%
-      filter(duration_sec <= longest_test_sec)
+      filter(duration_sec <= longest_test_sec) %>%
+      mutate(test = factor(test, levels = test_levels))
 
     ggplot() +
       geom_line(data = curves_df, aes(x = duration_sec, y = pred_power_w, color = test), linewidth = 1) +
       geom_point(data = points_df, aes(x = duration_sec, y = power_w, color = test), size = 3) +
-      scale_color_manual(values = setNames(c("black", "gray60"), c("Current", baseline_label))) +
-      scale_x_log10(breaks = unname(test_durations), labels = names(test_durations)) +
+      scale_color_manual(
+        values = setNames(c("#8A8A8A", "#111111"), test_levels),
+        breaks = c("Current", baseline_label)
+      ) +
+      scale_x_log10(
+        breaks = unname(test_durations),
+        labels = names(test_durations),
+        guide = guide_axis(check.overlap = TRUE)
+      ) +
       scale_y_continuous(labels = label_number()) +
       labs(
-        title = "Profile Shape Comparison",
-        subtitle = "Fitted curves within the tested range (45 s to 20 min)",
+        subtitle = "Fitted curves, 45 s to 20 min",
         x = "Duration",
         y = "Average power (W)",
         color = NULL
       ) +
       theme_minimal(base_size = 13) +
-      theme(legend.position = "top")
+      theme(legend.position = "top", plot.title.position = "plot")
   })
   
   output$history_plot <- renderPlot({
