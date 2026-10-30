@@ -1114,7 +1114,7 @@ ui <- navbarPage(
         numericInput("power_10min", "10 min average power (W)", value = NA, min = 1),
         numericInput("power_20min", "20 min average power (W)", value = NA, min = 1),
         tags$hr(),
-        actionButton("save_test", "Save Current Test to History"),
+        actionButton("save_test", "Save Current Test to History", class = "btn-primary"),
         br(), br(),
         textOutput("save_status")
       ),
