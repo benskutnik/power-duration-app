@@ -14,6 +14,7 @@ library(readr)
 library(scales)
 library(tidyr)
 library(DT)
+library(bslib)
 
 # ------------------------------
 # Global constants
@@ -1046,6 +1047,17 @@ ui <- navbarPage(
   id = "main_tabs",
   # On narrow screens, tabs collapse into a menu button instead of stacking.
   collapsible = TRUE,
+    collapsible = TRUE,
+  theme = bs_theme(
+    version = 5,
+    bg = "#FFFFFF",
+    fg = "#111111",
+    primary = "#111111",
+    base_font = font_collection(
+      "system-ui", "-apple-system", "Segoe UI", "Roboto",
+      "Helvetica Neue", "Arial", "sans-serif"
+    )
+  ),
 
   tabPanel(
     "Current Test Entry",
