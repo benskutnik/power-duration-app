@@ -981,7 +981,7 @@ format_duration_label <- function(sec) {
 
 protocol_html <- HTML(
   paste0(
-    "<h3>11-Day Testing Window</h3>",
+    "<h3>11-day testing window</h3>",
     "<p>Complete 5 maximal efforts over about 11 days, shortest to longest. The weekdays below are a suggested cadence. If your schedule differs, keep similar spacing: the first 3 tests 2 days apart, then 3 days before each of the last 2.</p>",
     "<p>The day of your 45-second test is your testing block start date. Enter it on the Current Test Entry tab.</p>",
     "<table class='table table-bordered'>",
@@ -993,7 +993,7 @@ protocol_html <- HTML(
     "<tr><td>2</td><td>Monday</td><td>10-minute maximal effort</td></tr>",
     "<tr><td>2</td><td>Thursday</td><td>20-minute maximal effort</td></tr>",
     "</tbody></table>",
-    "<h4>Standardization Rules</h4>",
+    "<h4>Standardization rules</h4>",
     "<ul>",
     "<li>Use the same ergometer and settings for every test.</li>",
     "<li>Test at about the same time of day when possible.</li>",
@@ -1001,14 +1001,14 @@ protocol_html <- HTML(
     "<li>Avoid hard conditioning during the testing window.</li>",
     "<li>The weekend is a recovery bridge, not a hard training block.</li>",
     "</ul>",
-    "<h4>Warm-Up Template</h4>",
+    "<h4>Warm-up template</h4>",
     "<ul>",
     "<li>5 minutes easy</li>",
     "<li>3 minutes moderate</li>",
     "<li>2 x 20 seconds strong with 1 minute easy between</li>",
     "<li>3 to 5 minutes easy before the test starts</li>",
     "</ul>",
-    "<h4>Pacing Guidance</h4>",
+    "<h4>Pacing guidance</h4>",
     "<ul>",
     "<li><strong>45 s:</strong> Start hard, but do not empty the tank in the first 10 seconds.</li>",
     "<li><strong>3 min:</strong> Start assertively, then settle into a hard sustainable effort.</li>",
@@ -1016,20 +1016,20 @@ protocol_html <- HTML(
     "<li><strong>10 min:</strong> Treat this as a hard sustained effort, not a sprint start with damage control later.</li>",
     "<li><strong>20 min:</strong> Start slightly under all-out and build if possible. This is the most pacing-sensitive test.</li>",
     "</ul>",
-    "<h4>When to Delay or Repeat a Test</h4>",
+    "<h4>When to delay or repeat a test</h4>",
     "<ul>",
     "<li>Delay a test if you are sick, unusually fatigued, or clearly not ready to give a maximal effort.</li>",
     "<li>Repeat a test if pacing failed badly or a result was clearly compromised by fatigue or equipment issues.</li>",
     "<li>Bad data are worse than delayed data.</li>",
     "</ul>",
-    "<h4>What Counts as a Valid Result</h4>",
+    "<h4>What counts as a valid result</h4>",
     "<ul>",
     "<li>The full target duration was completed.</li>",
     "<li>The effort was maximal for that duration.</li>",
     "<li>Conditions were reasonably standardized.</li>",
     "<li>The test was not obviously distorted by fatigue, illness, or setup problems.</li>",
     "</ul>",
-    "<h4>Recording and Saving Your Results</h4>",
+    "<h4>Recording and saving your results</h4>",
     "<ol>",
     "<li>Write down the average watts at the end of each test. Use the watts reading, not calories or pace.</li>",
     "<li>After the final test, enter all 5 results on the Current Test Entry tab.</li>",
@@ -1037,7 +1037,7 @@ protocol_html <- HTML(
     "<li>Download your history CSV from the Import / Export tab. The app does not keep data after you close it.</li>",
     "<li>Next time, upload that file before entering your new block, so comparisons and history checks work.</li>",
     "</ol>",
-    "<h4>What the Results Mean</h4>",
+    "<h4>What the results mean</h4>",
     "<p>Your profile is an estimate based on your field tests. The app does not directly measure lactate threshold, ventilatory thresholds, VO2max, or metabolic zones.</p>"
   )
 )
@@ -1069,7 +1069,8 @@ ui <- navbarPage(
       .site-footer a { display: inline-flex; align-items: center; gap: 8px; color: #666666; text-decoration: none; }
       .site-footer a:hover { color: #111111; }
       .table-scroll { overflow-x: auto; }
-      #training_targets_table table{min-width: 720px; }
+      .shiny-output-error-validation { margin-bottom: 1rem; }
+      #training_targets_table table { min-width: 720px; }
             table.dataTable tbody tr.selected > * {
         box-shadow: inset 0 0 0 9999px #111111 !important;
         color: #ffffff !important;
@@ -1090,7 +1091,7 @@ ui <- navbarPage(
     "Current Test Entry",
     sidebarLayout(
       sidebarPanel(
-        h4("Enter Current Test"),
+        h4("Enter current test"),
         p("New user? Read the Testing Protocol tab before your first testing block."),
         p("After the block, enter all 5 results here. The profile updates as you type. Save it to add it to this session's history."),
         textInput("athlete_name", "Athlete name"),
@@ -1134,7 +1135,7 @@ ui <- navbarPage(
         fluidRow(
           column(
             6,
-            h4("Current Summary"),
+            h4("Current summary"),
             tableOutput("summary_table")
           )
         )
@@ -1145,7 +1146,7 @@ ui <- navbarPage(
   tabPanel(
     "Historical Comparison",
     fluidPage(
-      h3("Saved Test History"),
+      h3("Saved test history"),
       p("Select a saved row to load it into the entry form for editing, or to delete it."),
       DTOutput("history_table"),
       br(),
@@ -1158,15 +1159,14 @@ ui <- navbarPage(
         column(8, uiOutput("history_action_status"))
       ),
       br(),
-      h3("Current vs Previous Comparable Test"),
-      tags$small("The comparison uses your most recent earlier test with a normal profile on the same equipment."),
-      tags$br(),
-      tags$small("Small changes may reflect normal test variation. Compare tests done on the same ergometer and under similar conditions."),
+      h3("Current vs previous comparable test"),
+      p("The comparison uses your most recent earlier test with a normal profile on the same equipment."),
+      p("Small changes may reflect normal test variation. Compare tests done on the same ergometer and under similar conditions."),
       div(class = "table-scroll", tableOutput("comparison_table")),
       h4("Profile shape: current vs previous comparable test"),
       uiOutput("overlay_plot_area"),
       br(),
-      h3("Historical Trends"),
+      h3("Historical trends"),
       uiOutput("history_plot_area")
     )
   ),
@@ -1174,15 +1174,14 @@ ui <- navbarPage(
   tabPanel(
     "Training Targets",
     fluidPage(
-      h3("Practical Training Targets"),
+      h3("Practical training targets"),
       p("These outputs are practical anchors derived from your entered field-test profile."),
       p("They are not direct measurements of lactate threshold, ventilatory thresholds, or exact metabolic zones."),
-      tags$small("Each category shows 2 anchor durations with an estimated power for each. Treat them as practical starting references derived from your profile."),
-      tags$br(),
-      tags$small("Use repeatability and workout response to adjust them."),
+      p("Each category shows 2 anchor durations with an estimated power for each. Treat them as practical starting references derived from your profile."),
+      p("Use repeatability and workout response to adjust them."),
       div(class = "table-scroll", tableOutput("training_targets_table")),
       h4("Predicted power by duration"),
-      tags$small("Values from 1 to 15 min are modeled from your 5 tests. The 30 and 60 min values extend beyond your longest test and carry more uncertainty."),
+      p("Values from 1 to 15 min are modeled from your 5 tests. The 30 and 60 min values extend beyond your longest test and carry more uncertainty."),
       tableOutput("prediction_table")
     )
   ),
@@ -1197,7 +1196,7 @@ ui <- navbarPage(
   tabPanel(
     "Import / Export",
     fluidPage(
-      h3("CSV Import and Export"),
+      h3("CSV import and export"),
       p(strong("This app does not store your data between sessions.")),
       p("To track progress over time, download your history before closing, then upload it when you return. Uploading replaces the current session history."),
       h4("Columns"),
@@ -1380,7 +1379,7 @@ server <- function(input, output, session) {
           scale_x_log10(breaks = unname(test_durations), labels = names(test_durations)) +
           scale_y_continuous(limits = c(0, NA), expand = expansion(mult = c(0, 0.1)), labels = label_number()) +
           labs(
-            title = "Entered Results",
+            title = "Entered results",
             subtitle = "No fitted curve: model outputs are withheld. See the messages above.",
             x = "Duration",
             y = "Average power (W)"
@@ -1459,7 +1458,7 @@ server <- function(input, output, session) {
         labels = label_number()
       ) +
       labs(
-        title = "Power-Duration Profile",
+        title = "Power-duration profile",
         subtitle = "Measured test points with a descriptive fitted curve",
         x = "Duration",
         y = "Average power (W)",
