@@ -1068,6 +1068,8 @@ ui <- navbarPage(
       .site-footer { margin: 40px 0 24px; text-align: center; font-size: 13px; }
       .site-footer a { display: inline-flex; align-items: center; gap: 8px; color: #666666; text-decoration: none; }
       .site-footer a:hover { color: #111111; }
+      .table-scroll { overflow-x: auto; }
+      #training_targets_table table{min-width: 720px; }
             table.dataTable tbody tr.selected > * {
         box-shadow: inset 0 0 0 9999px #111111 !important;
         color: #ffffff !important;
@@ -1160,7 +1162,7 @@ ui <- navbarPage(
       tags$small("The comparison uses your most recent earlier test with a normal profile on the same equipment."),
       tags$br(),
       tags$small("Small changes may reflect normal test variation. Compare tests done on the same ergometer and under similar conditions."),
-      tableOutput("comparison_table"),
+      div(class = "table-scroll", tableOutput("comparison_table")),
       h4("Profile shape: current vs previous comparable test"),
       uiOutput("overlay_plot_area"),
       br(),
@@ -1178,7 +1180,7 @@ ui <- navbarPage(
       tags$small("Each category shows 2 anchor durations with an estimated power for each. Treat them as practical starting references derived from your profile."),
       tags$br(),
       tags$small("Use repeatability and workout response to adjust them."),
-      tableOutput("training_targets_table"),
+      div(class = "table-scroll", tableOutput("training_targets_table")),
       h4("Predicted power by duration"),
       tags$small("Values from 1 to 15 min are modeled from your 5 tests. The 30 and 60 min values extend beyond your longest test and carry more uncertainty."),
       tableOutput("prediction_table")
@@ -1474,12 +1476,14 @@ server <- function(input, output, session) {
     validate(
       need(!current_validation()$outputs_withheld, "Resolve the messages above to view the summary.")
     )
-    build_summary_table(
+    summary <- build_summary_table(
       current_inputs(),
       current_model_fit(),
       current_secondary_metrics(),
       current_validation()
     )
+    names(summary) <- c("Metric", "Value")
+    summary
   }, striped = TRUE, bordered = TRUE, spacing = "s")
 
   output$prediction_table <- renderTable({
@@ -1734,7 +1738,7 @@ server <- function(input, output, session) {
     datatable(
       hist %>%
         transmute(
-          athlete_name,
+          Athlete = athlete_name,
           `Block start date` = as.character(test_date),
           `45 s` = power_45s,
           `3 min` = power_3min,
