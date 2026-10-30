@@ -1162,10 +1162,10 @@ ui <- navbarPage(
       tags$small("Small changes may reflect normal test variation. Compare tests done on the same ergometer and under similar conditions."),
       tableOutput("comparison_table"),
       h4("Profile shape: current vs previous comparable test"),
-      plotOutput("overlay_plot", height = "380px"),
+      uiOutput("overlay_plot_area"),
       br(),
       h3("Historical Trends"),
-      plotOutput("history_plot", height = "420px")
+      uiOutput("history_plot_area")
     )
   ),
 
@@ -1758,7 +1758,31 @@ server <- function(input, output, session) {
     build_comparison_table(current_inputs(), history_data())
   }, striped = TRUE, bordered = TRUE, spacing = "s", digits = 0)
 
-    # Profile-shape comparison (D-016): the current fitted curve and points
+  # Show the profile shape chart only when there's an earlier comparable
+  # test. Otherwise show one line instead of a tall empty box.
+  output$overlay_plot_area <- renderUI({
+    if (current_validation()$outputs_withheld) {
+      return(p(class = "text-muted", "Enter a test that produces a normal profile to compare shapes."))
+    }
+    if (is.null(find_baseline(current_inputs(), history_data())$baseline)) {
+      return(p(class = "text-muted", "No earlier comparable saved test exists yet for this athlete."))
+    }
+    plotOutput("overlay_plot", height = "380px")
+  })
+
+  # Same for Historical Trends: it needs at least 2 testing blocks.
+  output$history_plot_area <- renderUI({
+    hist <- history_data()
+    if (nrow(hist) == 0) {
+      return(p(class = "text-muted", "No saved history yet."))
+    }
+    if (dplyr::n_distinct(hist$test_date) < 2) {
+      return(p(class = "text-muted", "Save a second testing block to see trends over time."))
+    }
+    plotOutput("history_plot", height = "420px")
+  })
+
+  # Profile-shape comparison (D-016): the current fitted curve and points
   # over the baseline's, within the tested range only (45 s to 20 min).
   output$overlay_plot <- renderPlot({
     validate(
