@@ -1409,7 +1409,7 @@ server <- function(input, output, session) {
         "rect",
         xmin = longest_test_sec, xmax = Inf,
         ymin = -Inf, ymax = Inf,
-        fill = "grey92"
+        fill = "gray92"
       ) +
       annotate(
         "text",
@@ -1418,7 +1418,7 @@ server <- function(input, output, session) {
         label = "Extrapolated\nbeyond 20 min",
         vjust = 1.5,
         size = 3.5,
-        colour = "grey40"
+        color = "gray40"
       ) +
       geom_line(
         data = curve_tested,
@@ -1430,7 +1430,7 @@ server <- function(input, output, session) {
         aes(x = duration_sec, y = pred_power_w),
         linewidth = 1,
         linetype = "dashed",
-        colour = "grey45"
+        color = "gray45"
       ) +
       geom_point(
         data = profile_df,
@@ -1443,7 +1443,7 @@ server <- function(input, output, session) {
         size = 4,
         box.padding = 0.5,
         max.overlaps = Inf,
-        segment.colour = "#8A8A8A",
+        segment.color = "#8A8A8A",
         seed = 1
       ) +
       scale_x_log10(
@@ -1465,7 +1465,7 @@ server <- function(input, output, session) {
       ) +
       theme_minimal(base_size = 13) +
       theme(
-        plot.caption = element_text(hjust = 0, colour = "#666666"),
+        plot.caption = element_text(hjust = 0, color = "#666666"),
         plot.caption.position = "plot"
       )
   })
@@ -1785,9 +1785,9 @@ server <- function(input, output, session) {
       filter(duration_sec <= longest_test_sec)
 
     ggplot() +
-      geom_line(data = curves_df, aes(x = duration_sec, y = pred_power_w, colour = test), linewidth = 1) +
-      geom_point(data = points_df, aes(x = duration_sec, y = power_w, colour = test), size = 3) +
-      scale_colour_manual(values = setNames(c("black", "grey60"), c("Current", baseline_label))) +
+      geom_line(data = curves_df, aes(x = duration_sec, y = pred_power_w, color = test), linewidth = 1) +
+      geom_point(data = points_df, aes(x = duration_sec, y = power_w, color = test), size = 3) +
+      scale_color_manual(values = setNames(c("black", "gray60"), c("Current", baseline_label))) +
       scale_x_log10(breaks = unname(test_durations), labels = names(test_durations)) +
       scale_y_continuous(labels = label_number()) +
       labs(
@@ -1795,7 +1795,7 @@ server <- function(input, output, session) {
         subtitle = "Fitted curves within the tested range (45 s to 20 min)",
         x = "Duration",
         y = "Average power (W)",
-        colour = NULL
+        color = NULL
       ) +
       theme_minimal(base_size = 13) +
       theme(legend.position = "top")
@@ -1810,23 +1810,55 @@ server <- function(input, output, session) {
 
     trend_df <- prepare_history_trend_data(hist)
 
-    p <- ggplot(trend_df, aes(x = test_date, y = power_w, color = metric, group = metric))
+    # A trend needs at least 2 testing blocks.
+    validate(
+      need(dplyr::n_distinct(trend_df$test_date) > 1, "Save a second testing block to see trends over time.")
+    )
 
-    if (dplyr::n_distinct(trend_df$test_date) > 1) {
-      p <- p + geom_line(linewidth = 0.9)
-    }
+    # One gray per test duration, darkest for 45 s, and orange for
+    # estimated CP, the chart's one orange mark.
+    trend_colors <- c(
+      "45 s" = "#111111",
+      "3 min" = "#333333",
+      "6 min" = "#555555",
+      "10 min" = "#707070",
+      "20 min" = "#8A8A8A",
+      "Estimated CP" = "#E4572E"
+    )
 
-    p +
+    # Label each line at its most recent point instead of using a legend.
+    end_labels <- trend_df %>%
+      filter(!is.na(power_w)) %>%
+      group_by(metric) %>%
+      filter(test_date == max(test_date)) %>%
+      ungroup()
+
+    date_span <- as.numeric(diff(range(trend_df$test_date)))
+    label_nudge <- max(date_span, 1) * 0.03
+
+    ggplot(trend_df, aes(x = test_date, y = power_w, color = metric, group = metric)) +
+      geom_line(linewidth = 0.9) +
       geom_point(size = 2) +
+      geom_text_repel(
+        data = end_labels,
+        aes(label = metric),
+        hjust = 0,
+        nudge_x = label_nudge,
+        direction = "y",
+        size = 3.5,
+        seed = 1,
+        min.segment.length = Inf
+      ) +
+      scale_color_manual(values = trend_colors) +
+      scale_x_date(expand = expansion(mult = c(0.05, 0.3))) +
       scale_y_continuous(labels = label_number()) +
       labs(
-        title = "Historical Trends",
-        subtitle = "All fixed-duration powers plus estimated critical power",
+        subtitle = "Test powers and estimated CP",
         x = "Testing block start date",
-        y = "Average power (W)",
-        color = "Metric"
+        y = "Average power (W)"
       ) +
-      theme_minimal(base_size = 13)
+      theme_minimal(base_size = 13) +
+      theme(legend.position = "none", plot.title.position = "plot")
   })
 
   output$training_targets_table <- renderTable({
