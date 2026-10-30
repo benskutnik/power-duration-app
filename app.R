@@ -1067,6 +1067,10 @@ ui <- navbarPage(
       .site-footer { margin: 40px 0 24px; text-align: center; font-size: 13px; }
       .site-footer a { display: inline-flex; align-items: center; gap: 8px; color: #666666; text-decoration: none; }
       .site-footer a:hover { color: #111111; }
+            table.dataTable tbody tr.selected > * {
+        box-shadow: inset 0 0 0 9999px #111111 !important;
+        color: #ffffff !important;
+      }
     "))
   ),
   footer = tags$footer(
