@@ -16,6 +16,9 @@ library(tidyr)
 library(DT)
 library(bslib)
 
+# Footer link. Change it here when the site moves to benskutnik.com.
+site_url <- "https://benskutnik.ghost.io/?ref=power-duration-app"
+
 # ------------------------------
 # Global constants
 # ------------------------------
@@ -1047,7 +1050,6 @@ ui <- navbarPage(
   id = "main_tabs",
   # On narrow screens, tabs collapse into a menu button instead of stacking.
   collapsible = TRUE,
-    collapsible = TRUE,
   theme = bs_theme(
     version = 5,
     bg = "#FFFFFF",
@@ -1056,6 +1058,24 @@ ui <- navbarPage(
     base_font = font_collection(
       "system-ui", "-apple-system", "Segoe UI", "Roboto",
       "Helvetica Neue", "Arial", "sans-serif"
+    )
+  ),
+    header = tags$head(
+    tags$link(rel = "icon", href = "favicon-48.png"),
+    tags$link(rel = "apple-touch-icon", href = "apple-touch-icon.png"),
+    tags$style(HTML("
+      .site-footer { margin: 40px 0 24px; text-align: center; font-size: 13px; }
+      .site-footer a { display: inline-flex; align-items: center; gap: 8px; color: #666666; text-decoration: none; }
+      .site-footer a:hover { color: #111111; }
+    "))
+  ),
+  footer = tags$footer(
+    class = "site-footer",
+    tags$a(
+      href = site_url,
+      target = "_blank",
+      tags$img(src = "ben-skutnik-logo-light.svg", alt = "", height = 24),
+      "Made by Ben Skutnik"
     )
   ),
 
