@@ -250,15 +250,55 @@ split_context_flags <- function(x) {
 # (NULL for context flags) when a value isn't recognized, so the row can be
 # reported by number.
 
-# Dates are accepted as 2026-03-02 or 3/2/2026, since spreadsheet apps often
-# rewrite dates in the second form when saving a CSV.
-parse_upload_date <- function(x) {
+# Dates are accepted as 2026-03-02, or with slashes as 3/2/2026 or 3/2/26.
+# Slash dates are read month-first ("mdy") or day-first ("dmy"). The order
+# for a whole file comes from detect_slash_date_order() or the user (D-012).
+parse_upload_date <- function(x, slash_order = "mdy") {
   x <- trimws(as.character(x))
   if (is.na(x) || x == "") return(as.Date(NA))
   if (grepl("^\\d{4}-\\d{1,2}-\\d{1,2}", x)) return(as.Date(substr(x, 1, 10), format = "%Y-%m-%d"))
-  if (grepl("^\\d{1,2}/\\d{1,2}/\\d{4}$", x)) return(as.Date(x, format = "%m/%d/%Y"))
-  if (grepl("^\\d{1,2}/\\d{1,2}/\\d{2}$", x)) return(as.Date(x, format = "%m/%d/%y"))
+  first_two <- if (slash_order == "dmy") "%d/%m/" else "%m/%d/"
+  if (grepl("^\\d{1,2}/\\d{1,2}/\\d{4}$", x)) return(as.Date(x, format = paste0(first_two, "%Y")))
+  if (grepl("^\\d{1,2}/\\d{1,2}/\\d{2}$", x)) return(as.Date(x, format = paste0(first_two, "%y")))
   as.Date(NA)
+}
+
+# Work out how a file's slash dates are written. A first number above 12
+# (25/03/2026) means day-first, and a second number above 12 (03/25/2026)
+# means month-first. Returns the order and an example date for the question
+# the app asks when the file could be read either way.
+detect_slash_date_order <- function(x) {
+  x <- trimws(as.character(x))
+  slash_dates <- x[!is.na(x) & grepl("^\\d{1,2}/\\d{1,2}/(\\d{2}|\\d{4})$", x)]
+  if (length(slash_dates) == 0) return(list(order = "none", example = NA_character_))
+
+  parts <- do.call(rbind, strsplit(slash_dates, "/"))
+  first <- as.integer(parts[, 1])
+  second <- as.integer(parts[, 2])
+
+  order <- if (any(first > 12) && any(second > 12)) {
+    "conflict"
+  } else if (any(first > 12)) {
+    "dmy"
+  } else if (any(second > 12) || all(first == second)) {
+    # When every date has the same day and month (3/3/2026), both readings match.
+    "mdy"
+  } else {
+    "ambiguous"
+  }
+
+  # The example is a date that reads differently each way.
+  example <- slash_dates[first != second][1]
+  list(order = order, example = example)
+}
+
+# A date written out in full, such as "February 3, 2026", for the date
+# question on upload.
+format_long_date <- function(date) {
+  paste0(
+    month.name[as.integer(format(date, "%m"))], " ",
+    as.integer(format(date, "%d")), ", ", format(date, "%Y")
+  )
 }
 
 parse_protocol_confirmed <- function(x) {
@@ -814,15 +854,33 @@ upsert_history_record <- function(history_df, record) {
 
 # Read an uploaded history CSV. Every column is read as text first, so each
 # value can be checked and reported by row number before anything is used.
-read_history_csv <- function(path) {
-  raw <- read_csv(path, col_types = cols(.default = col_character()), show_col_types = FALSE)
-  validate_history_file(raw)
+read_history_text <- function(path) {
+  read_csv(path, col_types = cols(.default = col_character()), show_col_types = FALSE)
+}
+
+# slash_order is "mdy" or "dmy" when the user has chosen, or "auto" to work
+# it out from the file. A file that could be read either way needs a choice.
+read_history_csv <- function(path, slash_order = "auto") {
+  raw <- read_history_text(path)
+
+  if (slash_order == "auto") {
+    detected <- detect_slash_date_order(raw[["test_date"]])
+    if (detected$order == "ambiguous") {
+      stop("The dates in this file could be read month-first or day-first. Choose one when you upload.")
+    }
+    if (detected$order == "conflict") {
+      stop("The file mixes day-first and month-first dates. Use one format, or write dates as 2026-03-02.")
+    }
+    slash_order <- if (detected$order == "dmy") "dmy" else "mdy"
+  }
+
+  validate_history_file(raw, slash_order)
 }
 
 # Validate an uploaded history file (D-012). Returns the recomputed history
 # and the number of rows imported as compromised. Any problem stops the
 # upload with a message naming the rows, and existing history is unchanged.
-validate_history_file <- function(df) {
+validate_history_file <- function(df, slash_order = "mdy") {
   missing_required <- setdiff(history_required_cols, names(df))
   if (length(missing_required) > 0) {
     stop(paste0("The file is missing required columns: ", paste(missing_required, collapse = ", "), "."))
@@ -846,7 +904,7 @@ validate_history_file <- function(df) {
     row_problems <- character()
 
     raw_date <- df$test_date[i]
-    test_date <- parse_upload_date(raw_date)
+    test_date <- parse_upload_date(raw_date, slash_order)
     date_unreadable <- !is.na(raw_date) && trimws(raw_date) != "" && is.na(test_date)
     if (date_unreadable) {
       row_problems <- c(row_problems, paste0("test_date \"", raw_date, "\" isn't a date like 2026-03-02 or 3/2/2026"))
@@ -1212,7 +1270,7 @@ ui <- navbarPage(
       h4("Columns"),
       p("Required: athlete_name, test_date (your testing block start date), power_45s, power_3min, power_6min, power_10min, power_20min."),
       p("Optional: ergometer_type, protocol_confirmed (TRUE or FALSE), test_validity_flag (Complete, Compromised, or Retest needed), context_flags (separate several with a semicolon), and notes. Equipment names that don't match the app's list are saved as Other."),
-      p("Dates can be written as 2026-03-02 or 3/2/2026. Calculated columns in a downloaded file are ignored and recalculated on upload."),
+      p("Dates can be written as 2026-03-02, or with slashes month-first (3/25/2026) or day-first (25/3/2026). If every date in a file could be read either way, the app asks which you meant. Calculated columns in a downloaded file are ignored and recalculated on upload."),
       h4("What the upload checks"),
       tags$ul(
         tags$li("Each athlete and start date can appear only once."),
@@ -1599,19 +1657,21 @@ server <- function(input, output, session) {
     showNotification("Saved test replaced.", type = "message")
   })
 
-  observeEvent(input$upload_history, {
-    req(input$upload_history)
+  # An upload whose dates could be read 2 ways waits here while the user chooses.
+  pending_upload_path <- reactiveVal(NULL)
 
-    # Error messages stay open until closed, since they can list several rows.
+  # Replace session history with an uploaded file. Error messages stay open
+  # until closed, since they can list several rows.
+  finish_upload <- function(path, slash_order) {
     uploaded <- tryCatch(
-      read_history_csv(input$upload_history$datapath),
+      read_history_csv(path, slash_order),
       error = function(e) {
         showNotification(paste("Upload failed:", conditionMessage(e)), type = "error", duration = NULL)
         NULL
       }
     )
+    if (is.null(uploaded)) return(invisible(NULL))
 
-    req(!is.null(uploaded))
     history_data(uploaded$history)
     save_status_message("")
 
@@ -1627,6 +1687,49 @@ server <- function(input, output, session) {
       )
     }
     showNotification(message, type = "message", duration = 10)
+  }
+
+  observeEvent(input$upload_history, {
+    req(input$upload_history)
+    path <- input$upload_history$datapath
+
+    # If every slash date in the file could be read either way, ask first (D-012).
+    # A file that can't be read at all goes straight to finish_upload(),
+    # which reports the problem.
+    detected <- tryCatch(
+      detect_slash_date_order(read_history_text(path)[["test_date"]]),
+      error = function(e) list(order = "unreadable", example = NA_character_)
+    )
+
+    if (detected$order == "ambiguous") {
+      pending_upload_path(path)
+      showModal(modalDialog(
+        title = "How are dates written in this file?",
+        paste0("The file has dates such as ", detected$example, ", which could be read 2 ways. Which date is it?"),
+        footer = tagList(
+          modalButton("Cancel"),
+          actionButton("dates_month_first", format_long_date(parse_upload_date(detected$example, "mdy"))),
+          actionButton("dates_day_first", format_long_date(parse_upload_date(detected$example, "dmy")))
+        )
+      ))
+      return()
+    }
+
+    finish_upload(path, "auto")
+  })
+
+  observeEvent(input$dates_month_first, {
+    removeModal()
+    req(pending_upload_path())
+    finish_upload(pending_upload_path(), "mdy")
+    pending_upload_path(NULL)
+  })
+
+  observeEvent(input$dates_day_first, {
+    removeModal()
+    req(pending_upload_path())
+    finish_upload(pending_upload_path(), "dmy")
+    pending_upload_path(NULL)
   })
 
   output$save_status <- renderText({

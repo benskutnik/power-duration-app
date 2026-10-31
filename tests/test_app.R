@@ -157,10 +157,10 @@ write_csv(build_example_upload_csv(), example_path)
 example <- read_history_csv(example_path)
 check("Example CSV uploads", nrow(example$history) == 1 && example$history$context_flags == "Poor sleep")
 
-upload <- function(lines) {
+upload <- function(lines, slash_order = "auto") {
   path <- tempfile(fileext = ".csv")
   writeLines(lines, path)
-  tryCatch(read_history_csv(path), error = function(e) conditionMessage(e))
+  tryCatch(read_history_csv(path, slash_order), error = function(e) conditionMessage(e))
 }
 header <- "athlete_name,test_date,power_45s,power_3min,power_6min,power_10min,power_20min"
 
@@ -171,8 +171,25 @@ r <- upload(c(
 check("Version 1.0 export uploads, legacy Riegel columns ignored",
       is.list(r) && !("riegel_S" %in% names(r$history)) && r$history$protocol_confirmed)
 
+r <- upload(c(header, "Sam,3/2/2026,620,410,360,330,295", "Ann,4/6/26,500,330,290,270,240"), "mdy")
+check("US-style dates upload when month-first is chosen",
+      is.list(r) && all(sort(r$history$test_date) == as.Date(c("2026-03-02", "2026-04-06"))))
+
 r <- upload(c(header, "Sam,3/2/2026,620,410,360,330,295", "Ann,4/6/26,500,330,290,270,240"))
-check("US-style dates upload", is.list(r) && all(r$history$test_date == as.Date(c("2026-03-02", "2026-04-06"))))
+check("Dates that could be read 2 ways: upload stops for a choice",
+      is.character(r) && grepl("month-first or day-first", r))
+
+r <- upload(c(header, "Sam,02/03/2026,620,410,360,330,295"), "dmy")
+check("Day-first chosen: 02/03/2026 reads as March 2",
+      is.list(r) && r$history$test_date == as.Date("2026-03-02"))
+
+r <- upload(c(header, "Sam,25/03/2026,620,410,360,330,295", "Ann,02/04/2026,500,330,290,270,240"))
+check("A day above 12 in first place: whole file read day-first",
+      is.list(r) && all(sort(r$history$test_date) == as.Date(c("2026-03-25", "2026-04-02"))))
+
+r <- upload(c(header, "Sam,25/03/2026,620,410,360,330,295", "Ann,03/25/2026,500,330,290,270,240"))
+check("Mixed day-first and month-first dates: upload rejected",
+      is.character(r) && grepl("mixes", r))
 
 r <- upload(c(header, "Sam,2026-03-02,620,410,360,330,335"))
 check("Ordering failure uploads as compromised",

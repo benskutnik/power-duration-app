@@ -184,7 +184,13 @@ The whole file is validated before history is replaced. Any failure leaves exist
 
 **Example CSV:** the downloadable example includes `protocol_confirmed` and `context_flags`, so users see they exist.
 
-**Dates:** `test_date` is accepted as 2026-03-02, 3/2/2026, or 3/2/26, because spreadsheet apps often rewrite dates in the US format when saving a CSV. Added on 2026-10-20 during implementation.
+**Dates:** `test_date` is accepted as 2026-03-02, or with slashes (3/2/2026 or 3/2/26), because spreadsheet apps often rewrite dates when saving a CSV. Added on 2026-10-20 during implementation.
+
+**Slash date order** (updated 2026-10-31, 1.2.1): the app reads every slash date in a file the same way. A first number above 12 (25/03/2026) means day-first. A second number above 12 (03/25/2026) means month-first. A file showing both is rejected. When every date could be read either way, the app asks the user, using a date from the file as the example. A file where every date has the same day and month (3/3/2026) needs no question.
+
+**Why:** the app previously read all slash dates month-first. A file saved by a spreadsheet set to UK or European dates turned March 2 into February 3 with no warning, and a wrong date can change which earlier test serves as the baseline (D-010).
+
+**Replaces:** month-first reading of all slash dates.
 
 ## D-013: Athlete key
 
