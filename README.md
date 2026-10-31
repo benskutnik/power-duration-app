@@ -55,7 +55,7 @@ The app stores nothing between sessions. Download your history CSV from the Impo
 
 ## Status
 
-Version 1.1 is live. See `CHANGELOG.md` for what changed.
+Version 1.2.0 is live. See `CHANGELOG.md` for what changed.
 
 ## License
 

@@ -1,7 +1,7 @@
 
 # app.R
 # Power-Duration Relationship App
-# Version 1.1. See CHANGELOG.md for changes and docs/DECISIONS.md for the
+# Version 1.2.0. See CHANGELOG.md for changes and docs/DECISIONS.md for the
 # reasoning behind the rules in this file.
 
 # ------------------------------
@@ -1282,7 +1282,7 @@ server <- function(input, output, session) {
   })
 
   # Completion status: how many of the 5 results are entered, and what the
-  # user should do next. Shown at the top of Current Test Entry.
+  # user should do next. Shown at the top of Current test entry.
   output$completion_status <- renderUI({
     test_row <- current_inputs()
     watts <- c(

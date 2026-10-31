@@ -23,9 +23,14 @@ The live app runs on Posit Connect Cloud, which redeploys automatically whenever
 4. In `README.md`, update the version in the Status section.
 5. Regenerate the deployment manifest, which records the R and package versions Connect Cloud installs:
    ```r
-   rsconnect::writeManifest(appFiles = "app.R")
+   rsconnect::writeManifest(appFiles = c(
+     "app.R",
+     "www/favicon-48.png",
+     "www/apple-touch-icon.png",
+     "www/ben-skutnik-logo-light.svg"
+   ))
    ```
-   Limiting it to `app.R` keeps `docs/`, `tests/`, and the example file out of the deployed app.
+   Listing the files keeps `docs/`, `tests/`, and the example file out of the deployed app. Add any new file in `www/` to this list.
 6. Commit these files together as `Prepare release X.Y.Z`, then Push origin.
 
 ## Releasing

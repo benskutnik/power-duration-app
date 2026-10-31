@@ -2,6 +2,22 @@
 
 User-facing changes to the Power-Duration App.
 
+## 1.2.0 (2026-10-30)
+
+### Changed
+
+- The app has a new look that matches Ben Skutnik's other apps: black and white, one font, and a "Made by Ben Skutnik" link at the bottom of every page. The browser tab shows the b_ icon.
+- Headings, tab names, and buttons use sentence case.
+- "Save current test to history" is the one filled button on the entry page.
+- The selected row in the saved test history is black instead of blue.
+- On the power-duration profile, watt labels stay clear of the curve and inside the chart, axis labels no longer overlap on small screens, and the caption wraps onto 2 lines.
+- Historical trends labels each line at its latest point instead of using a legend, shows estimated CP in orange, and appears once 2 testing blocks are saved.
+- The profile shape comparison draws the current test on top of the previous one, so matching points stay visible.
+- When there's nothing to compare yet, the profile shape and trends sections show one line of text instead of an empty box.
+- On phones, the comparison and training targets tables scroll sideways inside their own box instead of widening the page.
+- Explanatory text on Historical comparison and Training targets uses the regular text size.
+- Table headers read "Athlete," "Metric," and "Value."
+
 ## 1.1.0 (2026-10-20)
 
 ### Added
