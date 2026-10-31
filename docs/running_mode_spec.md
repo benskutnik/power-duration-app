@@ -38,37 +38,15 @@ Agreed on 2026-10-31:
 
 ## 5. Validation
 
-### Why ergometer thresholds don't transfer
+The running checks and their values are recorded in **D-021** in `docs/DECISIONS.md`, which controls. In short:
 
-Speed falls off much less with duration than power does. An example runner with CS of 4.0 m/s and D′ of 200 m:
+- **Comparisons use pace.** Every check that compares tests uses average speed (distance ÷ time), and its message shows pace, for example "Your 20 min pace (3:55 /km) is faster than your 10 min pace (3:58 /km)."
+- **Reversals:** a longer test up to 2% faster than the one before it gets "Keep, but interpret cautiously." More than 2% withholds outputs, as an ordering failure does on ergometers.
+- **Curve shape (4%) and historical mismatch (8%)** match the ergometer values. The history check uses the 3 to 20 min tests only.
+- **Unit check:** a 20 min distance below 1,000 m or above 8,000 m is a hard input error.
+- **D′ is shown** alongside CS, under the same together-or-not-at-all rule as CP and W′.
 
-| Test | Distance | Speed | Drop from previous |
-| ----- | ----- | ----- | ----- |
-| 45 s | 300 m | 6.67 m/s | |
-| 3 min | 920 m | 5.11 m/s | 23% |
-| 6 min | 1,640 m | 4.56 m/s | 11% |
-| 10 min | 2,600 m | 4.33 m/s | 5% |
-| 20 min | 5,000 m | 4.17 m/s | 4% |
-
-The ergometer steep-decline rules (20% and 25%) would almost never fire on this profile. The 1% near-flat rule sits close to normal 10-to-20-min drops.
-
-### Hard input errors (block saving)
-
-- Name or date missing.
-- A distance missing, non-numeric, zero, or negative.
-- 20 min distance above 8,000 m. The 10,000 m world record works out to about 7,600 m in 20 minutes, so a larger value most likely comes from a unit mistake. Message: check the unit.
-- 20 min distance below 1,000 m, which is 3 km/h, slower than walking. This catches km or mi values typed with meters selected. Message: check the unit.
-
-### Pattern blocks (save only as compromised)
-
-- **Ordering:** each shorter test must have a higher speed than the next longer one.
-- **Suspected entry error:** adjacent speed ratios above running-specific limits, set by the running-threshold simulation (build order step 3).
-
-### Soft warnings
-
-Same 6 checks as D-007, applied to speed: near-flat, steep 45 s to 3 min, steep declines, curve shape, and historical mismatch. Running thresholds come from a new simulation (build order step 3) using a 3-parameter speed model with 2% to 3% day-to-day error plus measurement error.
-
-**Measurement error matters here:** a 10 to 20 m GPS error on a 300 m effort is 3% to 7%, larger than the ergometer curve-shape limit of 4%. Manual treadmill consoles also differ in calibration between brands. The simulation should include both.
+**Why small reversals happen:** with well-paced tests, the 20 min distance falls short of double the 10 min distance by exactly D′, typically about 190 m. Day-to-day variation and GPS error can cover that gap. The developer reports that well-paced running tests are consistent from day to day, and D-021's simulation assumes about 1% variation. If real data shows more, the thresholds need loosening.
 
 ### Context flags
 
@@ -118,6 +96,7 @@ Rules:
 - **Sport choice** at the top of the entry sidebar: Ergometer (default) or Running. Choosing Running swaps the 5 input labels (for example, "45 s distance (m)"), shows the unit picker and setting dropdown, and hides the ergometer dropdown. Inputs accept decimals for km and mi.
 - **Profile chart:** speed on the y-axis, labeled in pace at round values. Pace gridlines are not evenly spaced, since pace is the inverse of speed.
 - **Summary:** estimated CS shown as pace, D′ in meters.
+- **Warnings:** any message comparing tests uses pace, not speed in m/s.
 - **Training targets:** same 5 categories and anchors, shown as pace, for example "4 min: 4:02 /km."
 - **Historical comparison:** change shown in seconds per km or mile and as a percentage.
 - **Historical trends:** one athlete and one sport at a time. The Athlete dropdown from 1.2.1 gains a sport filter.
@@ -147,7 +126,7 @@ Rules:
 
 1. Finish and release 1.2.1. Done 2026-10-31.
 2. Add D-020 to `docs/DECISIONS.md`. Done 2026-10-31.
-3. Run the running-threshold simulation and record the results as D-021.
+3. Run the running-threshold simulation and record the results as D-021. Done 2026-10-31.
 4. Refactor the code so each sport's labels, units, and thresholds come from one settings list. Ergometer behavior stays the same, and all existing checks still pass.
 5. Add the data model and CSV changes, with tests.
 6. Build the entry interface and unit conversion.

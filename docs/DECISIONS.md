@@ -258,3 +258,44 @@ The full plan is in `docs/running_mode_spec.md`.
 **Why:** users asked for running. The model math is the same: distance = CS × time + D′ has the same form as work = CP × time + W′, and the power-law curve fits speed the same way it fits power. Fixed-time tests keep the 5-duration structure that validation, predictions, and comparisons depend on. On a motorized treadmill the belt sets the speed, so a maximal fixed-time effort doesn't measure what the runner can produce. Runners read pace, and plotting speed keeps faster at the top, as on the ergometer chart.
 
 **Replaces:** the ergometer-only scope in `01_project_definition_memo.md`.
+
+
+## D-021: Running warning thresholds
+
+**Date:** 2026-10-31 | **Status:** Decided; Review scheduled
+
+Running blocks use these checks in place of D-005, D-006's 600 W cap, and D-007. Every check that compares tests uses average speed (distance ÷ time), and its message shows pace, for example "Your 20 min pace (3:55 /km) is faster than your 10 min pace (3:58 /km)."
+
+| Check | Rule | Result |
+| ----- | ----- | ----- |
+| Unit check | 20 min distance below 1,000 m or above 8,000 m | Hard input error |
+| Large reversal | A longer test's pace is more than 2% faster than the shorter test before it | Pattern block |
+| Small reversal | A longer test's pace is equal to, or up to 2% faster than, the shorter test before it | Keep, but interpret cautiously |
+| Suspected entry error | Speed ratio above 1.8 for 45 s ÷ 3 min, or above 1.5 for any other adjacent pair | Pattern block |
+| Steep 45 s to 3 min | Speed ratio above 1.45, up to 1.8 | Keep, but interpret cautiously |
+| Steep decline | Speed drop above 16% from 3 to 6 min, or above 12% from 6 to 10 or 10 to 20 min | Retest suggested |
+| Curve shape | A 3, 6, or 10 min speed more than 4% from the quadratic fit (D-007 method) | Retest suggested |
+| Historical mismatch | Any of the 3, 6, 10, or 20 min speeds more than 8% from the baseline (D-010) | Retest suggested |
+
+The near-flat rule doesn't apply to running, since the reversal rules cover it. CS and D′ are both shown, under the same together-or-not-at-all rule as CP and W′.
+
+**Why:** running speed drops only about 4% between the 6, 10, and 20 min tests, against 8% to 10% for ergometer power. With well-paced tests, the 20 min distance falls short of double the 10 min distance by exactly D′ (89 to 303 m in simulation), so normal variation can produce small reversals. A reversal of 2% or less is within GPS error and barely moves the fitted curve, so it gets a caution instead of withholding outputs. The history check leaves out the 45 s test, because GPS error on that short effort flagged 20% of honest outdoor blocks.
+
+**Simulation results** (honest blocks, track / GPS / manual treadmill):
+
+| Outcome | Rate |
+| ----- | ----- |
+| Outputs withheld (large reversal) | 0.2% / 3.8% / 1.0% |
+| Small-reversal caution | 3.2% / 12.3% / 7.2% |
+| Curve-shape warning | 0.0% / 1.9% / 0.1% |
+| Historical mismatch | 0.0% / 2.1% / 0.1% |
+| Steep checks | under 1% each |
+| 10% entry error at 6 or 10 min caught | 91% to 100% |
+| CS, 90% of estimates within | ±2.2% / ±3.8% / ±5.4% |
+| D′, 90% of estimates within | ±22% / ±37% / ±30% |
+
+**Simulation method:** 20,000 profiles per setting from a 3-parameter critical speed model (CS 2.5 to 5.5 m/s, D′ 100 to 350 m, maximum speed 1.6 to 2.4 × CS, limited to 5.0 to 10.5 m/s). Each test got 0.5% to 1.5% day-to-day variation, based on the developer's report that well-paced running tests are consistent. Measurement error was added for each setting: ±5 m on a track; 1.5% plus about 10 m with GPS; 1% per test on a manual treadmill, plus a fixed calibration offset of up to 5% per machine. All rates are estimates.
+
+**Sensitivity:** at 2% to 3% day-to-day variation (the D-007 assumption), reversals over 2% rise to 11% to 18% of honest blocks. If real data shows that much variation, the reversal limit needs loosening.
+
+**Review plan:** same as D-007, using at least 30 real running blocks, with GPS blocks reviewed separately. When a runner repeats a test within a week, compare the 2 results to measure the real day-to-day variation.
