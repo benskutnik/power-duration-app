@@ -1,7 +1,7 @@
 
 # app.R
 # Power-Duration Relationship App
-# Version 1.2.0. See CHANGELOG.md for changes and docs/DECISIONS.md for the
+# Version 1.2.1. See CHANGELOG.md for changes and docs/DECISIONS.md for the
 # reasoning behind the rules in this file.
 
 # ------------------------------

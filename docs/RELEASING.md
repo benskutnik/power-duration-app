@@ -20,7 +20,7 @@ The live app runs on Posit Connect Cloud, which redeploys automatically whenever
    Every check should pass. If a rule changed on purpose, update its check.
 2. Open the app in a web browser and walk through it as a user: enter a test, save it, download and re-upload the history, and look at each tab. Narrow the window to phone width once.
 3. In `CHANGELOG.md`, rename `## Unreleased` to the new version and date, such as `## 1.2.0 (2026-11-15)`.
-4. In `README.md`, update the version in the Status section.
+4. In `README.md`, update the version in the Status section, and add any new package to the "Run it locally" list. In `app.R`, update the version in the comment at the top.
 5. Regenerate the deployment manifest, which records the R and package versions Connect Cloud installs:
    ```r
    rsconnect::writeManifest(appFiles = c(
