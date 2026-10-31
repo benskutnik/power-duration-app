@@ -235,6 +235,15 @@ suppressWarnings(testServer(server, {
   broken <- broken_outputs(session)
   check("Server: empty form shows every output without crashing", length(broken) == 0, broken)
 
+  box <- paste(unlist(output$validation_box), collapse = " ")
+  check("Server: empty form shows no input-check box", !grepl("Blocking issues", box))
+
+  set_watts(typical)
+  box <- paste(unlist(output$validation_box), collapse = " ")
+  check("Server: missing name shows the error without retest guidance",
+        grepl("Athlete name is required", box) && !grepl("Retest guidance", box))
+  set_watts(rep(NA, 5))
+
   session$setInputs(test_date = NULL)
   broken <- broken_outputs(session)
   check("Server: cleared date doesn't crash", length(broken) == 0, broken)

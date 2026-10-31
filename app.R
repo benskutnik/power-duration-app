@@ -339,6 +339,16 @@ to_long_profile <- function(test_row) {
   )
 }
 
+# TRUE until all 5 results are entered. The completion bar at the top of
+# Current test entry already lists what's missing, so the input checks wait
+# until the user has finished entering results.
+results_incomplete <- function(test_row) {
+  any(is.na(c(
+    test_row$power_45s, test_row$power_3min, test_row$power_6min,
+    test_row$power_10min, test_row$power_20min
+  )))
+}
+
 # Check a test entry in 3 layers (see docs/DECISIONS.md, D-005 to D-010):
 # 1. Hard input errors block calculation and saving.
 # 2. Ordering failures, suspected entry errors, and sessions the user marked
@@ -1320,6 +1330,11 @@ server <- function(input, output, session) {
   })
   
   output$validation_box <- renderUI({
+    # Nothing to check until all 5 results are entered.
+    if (results_incomplete(current_inputs())) {
+      return(NULL)
+    }
+
     v <- current_validation()
 
     green_style <- "padding:10px; background-color:#eef7ee; border:1px solid #cfe5cf; margin-bottom:15px;"
@@ -1358,12 +1373,19 @@ server <- function(input, output, session) {
         tags$p(tags$strong("Notes")),
         tags$ul(lapply(v$notes, tags$li))
       ),
-      tags$p(tags$strong("Retest guidance: "), v$retest_level, ". ", v$confidence_summary)
+      # Input errors (such as a missing name) only need fixing, so retest
+      # guidance appears only when the entry itself is complete.
+      if (length(v$errors) == 0) {
+        tags$p(tags$strong("Retest guidance: "), paste0(v$retest_level, ". ", v$confidence_summary))
+      }
     )
   })
 
   output$pd_plot <- renderPlot({
     v <- current_validation()
+    validate(
+      need(!results_incomplete(current_inputs()), "Enter your 5 results to see your profile.")
+    )
     validate(
       need(length(v$errors) == 0, "Fix the blocking issues to view your results.")
     )
@@ -1473,6 +1495,9 @@ server <- function(input, output, session) {
 
   output$summary_table <- renderTable({
     validate(
+      need(!results_incomplete(current_inputs()), "Your summary appears once all 5 results are entered.")
+    )
+    validate(
       need(!current_validation()$outputs_withheld, "Resolve the messages above to view the summary.")
     )
     summary <- build_summary_table(
@@ -1502,6 +1527,11 @@ server <- function(input, output, session) {
   pending_record <- reactiveVal(NULL)
 
   observeEvent(input$save_test, {
+    if (results_incomplete(current_inputs())) {
+      showNotification("Not saved yet. Enter all 5 results first.", type = "warning")
+      return(NULL)
+    }
+
     v <- current_validation()
 
     if (length(v$errors) > 0) {
