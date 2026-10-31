@@ -993,7 +993,23 @@ write_history_csv <- function(history_df, file) {
   write_csv(history_df, file, na = "")
 }
 
-prepare_history_trend_data <- function(history_df) {
+# One dropdown entry per athlete, matched the same way as the profile key
+# (D-013). Values are normalized names, and labels use the spelling from
+# each athlete's most recent test.
+athlete_choices <- function(history_df) {
+  if (nrow(history_df) == 0) return(character())
+  latest <- history_df %>%
+    mutate(key = normalize_athlete_name(athlete_name)) %>%
+    arrange(desc(test_date)) %>%
+    distinct(key, .keep_all = TRUE) %>%
+    arrange(key)
+  setNames(latest$key, latest$athlete_name)
+}
+
+# Trend data for one athlete, chosen by normalized name.
+prepare_history_trend_data <- function(history_df, athlete_key) {
+  history_df <- history_df %>%
+    filter(normalize_athlete_name(athlete_name) == athlete_key)
   history_df %>%
     select(test_date, power_45s, power_3min, power_6min, power_10min, power_20min, estimated_cp) %>%
     pivot_longer(
@@ -1235,6 +1251,7 @@ ui <- navbarPage(
       uiOutput("overlay_plot_area"),
       br(),
       h3("Historical trends"),
+      selectInput("trend_athlete", "Athlete", choices = character()),
       uiOutput("history_plot_area")
     )
   ),
@@ -1906,14 +1923,36 @@ server <- function(input, output, session) {
     plotOutput("overlay_plot", height = "380px")
   })
 
+  # Keep the trends athlete list in step with saved history. Keep the current
+  # choice if it still exists; otherwise prefer the athlete in the entry form.
+  observe({
+    choices <- athlete_choices(history_data())
+    current <- isolate(input$trend_athlete)
+    entered <- normalize_athlete_name(isolate(current_inputs()$athlete_name))
+
+    selected <- if (length(choices) == 0) {
+      character()
+    } else if (!is.null(current) && current %in% choices) {
+      current
+    } else if (entered %in% choices) {
+      entered
+    } else {
+      unname(choices[1])
+    }
+
+    updateSelectInput(session, "trend_athlete", choices = choices, selected = selected)
+  })
+
   # Same for Historical Trends: it needs at least 2 testing blocks.
   output$history_plot_area <- renderUI({
     hist <- history_data()
     if (nrow(hist) == 0) {
       return(p(class = "text-muted", "No saved history yet."))
     }
-    if (dplyr::n_distinct(hist$test_date) < 2) {
-      return(p(class = "text-muted", "Save a second testing block to see trends over time."))
+    athlete_hist <- hist %>%
+      filter(normalize_athlete_name(athlete_name) %in% input$trend_athlete)
+    if (dplyr::n_distinct(athlete_hist$test_date) < 2) {
+      return(p(class = "text-muted", "Save a second testing block for this athlete to see trends over time."))
     }
     plotOutput("history_plot", height = "420px")
   })
@@ -1979,7 +2018,8 @@ server <- function(input, output, session) {
       need(nrow(hist) > 0, "No saved history yet.")
     )
 
-    trend_df <- prepare_history_trend_data(hist)
+    req(input$trend_athlete)
+    trend_df <- prepare_history_trend_data(hist, input$trend_athlete)
 
     # A trend needs at least 2 testing blocks.
     validate(

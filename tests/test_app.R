@@ -134,6 +134,21 @@ replaced <- upsert_history_record(history, make_profile_record(
 check("Saving the same name (any case) and date replaces the record",
       nrow(replaced) == 2 && replaced$power_45s[replaced$test_date == as.Date("2026-01-05")] == 630)
 
+ann_watts <- c(500, 330, 290, 270, 240)
+two_athletes <- recompute_uploaded_history(bind_rows(
+  make_profile_record(entry(typical, name = "Sam Smith", date = "2026-01-05"), validate_test_values(entry(typical))),
+  make_profile_record(entry(typical, name = "sam  smith", date = "2026-02-02"), validate_test_values(entry(typical))),
+  make_profile_record(entry(ann_watts, name = "Ann", date = "2026-01-12"), validate_test_values(entry(ann_watts)))
+))
+
+choices <- athlete_choices(two_athletes)
+check("Athlete list: one entry per athlete, names matched as in D-013",
+      length(choices) == 2 && setequal(unname(choices), c("ann", "sam smith")))
+
+trend <- prepare_history_trend_data(two_athletes, "sam smith")
+check("Trends use only the chosen athlete",
+      dplyr::n_distinct(trend$test_date) == 2 && !(as.Date("2026-01-12") %in% trend$test_date))
+
 # ------------------------------
 # CSV import and export (D-012)
 # ------------------------------
@@ -296,6 +311,8 @@ suppressWarnings(testServer(server, {
   set_watts(c(700, 460, 400, 365, 325))
   check("Server: history check uses the earlier normal test, skipping the compromised one",
         "history_mismatch" %in% current_validation()$flags)
+
+  session$setInputs(trend_athlete = "sam smith")
 
   broken <- broken_outputs(session)
   check("Server: comparison table and overlay render", length(broken) == 0, broken)

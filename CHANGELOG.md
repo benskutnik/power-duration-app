@@ -9,6 +9,7 @@ User-facing changes to the Power-Duration App.
 - Until all 5 results are entered, the entry page shows "Enter your 5 results to see your profile" instead of a "Blocking issues" box. Clicking Save before then says all 5 results are needed.
 - A missing name or date, or an invalid watt value, shows only what to fix, without retest guidance.
 - Uploaded dates written day-first, such as 25/03/2026 from a UK or European spreadsheet, are read correctly. When every date in a file could be read either way, such as 02/03/2026, the app asks which you meant instead of assuming month-first. A file that mixes both orders is rejected with a message.
+- Historical trends shows one athlete at a time, chosen from an Athlete dropdown. Before, tests from different athletes were joined into the same lines.
 
 ## 1.2.0 (2026-10-30)
 
