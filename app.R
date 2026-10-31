@@ -983,7 +983,7 @@ protocol_html <- HTML(
   paste0(
     "<h3>11-day testing window</h3>",
     "<p>Complete 5 maximal efforts over about 11 days, shortest to longest. The weekdays below are a suggested cadence. If your schedule differs, keep similar spacing: the first 3 tests 2 days apart, then 3 days before each of the last 2.</p>",
-    "<p>The day of your 45-second test is your testing block start date. Enter it on the Current Test Entry tab.</p>",
+    "<p>The day of your 45-second test is your testing block start date. Enter it on the Current test entry tab.</p>",
     "<table class='table table-bordered'>",
     "<thead><tr><th>Week</th><th>Suggested day</th><th>Session</th></tr></thead>",
     "<tbody>",
@@ -1032,9 +1032,9 @@ protocol_html <- HTML(
     "<h4>Recording and saving your results</h4>",
     "<ol>",
     "<li>Write down the average watts at the end of each test. Use the watts reading, not calories or pace.</li>",
-    "<li>After the final test, enter all 5 results on the Current Test Entry tab.</li>",
+    "<li>After the final test, enter all 5 results on the Current test entry tab.</li>",
     "<li>Review any warnings, then save the test to history.</li>",
-    "<li>Download your history CSV from the Import / Export tab. The app does not keep data after you close it.</li>",
+    "<li>Download your history CSV from the Import / export tab. The app does not keep data after you close it.</li>",
     "<li>Next time, upload that file before entering your new block, so comparisons and history checks work.</li>",
     "</ol>",
     "<h4>What the results mean</h4>",
@@ -1047,7 +1047,7 @@ protocol_html <- HTML(
 # ------------------------------
 
 ui <- navbarPage(
-  title = "Power-Duration App",
+  title = "Power-duration app",
   id = "main_tabs",
   # On narrow screens, tabs collapse into a menu button instead of stacking.
   collapsible = TRUE,
@@ -1088,11 +1088,11 @@ ui <- navbarPage(
   ),
 
   tabPanel(
-    "Current Test Entry",
+    "Current test entry", value = "Current Test Entry",
     sidebarLayout(
       sidebarPanel(
         h4("Enter current test"),
-        p("New user? Read the Testing Protocol tab before your first testing block."),
+        p("New user? Read the Testing protocol tab before your first testing block."),
         p("After the block, enter all 5 results here. The profile updates as you type. Save it to add it to this session's history."),
         textInput("athlete_name", "Athlete name"),
         dateInput("test_date", "Testing block start date", value = Sys.Date()),
@@ -1118,7 +1118,7 @@ ui <- navbarPage(
         numericInput("power_10min", "10 min average power (W)", value = NA, min = 1),
         numericInput("power_20min", "20 min average power (W)", value = NA, min = 1),
         tags$hr(),
-        actionButton("save_test", "Save Current Test to History", class = "btn-primary"),
+        actionButton("save_test", "Save current test to history", class = "btn-primary"),
         br(), br(),
         textOutput("save_status")
       ),
@@ -1144,7 +1144,7 @@ ui <- navbarPage(
   ),
 
   tabPanel(
-    "Historical Comparison",
+    "Historical comparison",
     fluidPage(
       h3("Saved test history"),
       p("Select a saved row to load it into the entry form for editing, or to delete it."),
@@ -1153,8 +1153,8 @@ ui <- navbarPage(
       fluidRow(
         column(
           4,
-          actionButton("load_selected_test", "Load Selected Test for Editing"),
-          actionButton("delete_selected_test", "Delete Selected Test")
+          actionButton("load_selected_test", "Load selected test for editing"),
+          actionButton("delete_selected_test", "Delete selected test")
         ),
         column(8, uiOutput("history_action_status"))
       ),
@@ -1172,7 +1172,7 @@ ui <- navbarPage(
   ),
 
   tabPanel(
-    "Training Targets",
+    "Training targets",
     fluidPage(
       h3("Practical training targets"),
       p("These outputs are practical anchors derived from your entered field-test profile."),
@@ -1187,14 +1187,14 @@ ui <- navbarPage(
   ),
 
   tabPanel(
-    "Testing Protocol",
+    "Testing protocol",
     fluidPage(
       HTML(protocol_html)
     )
   ),
   
   tabPanel(
-    "Import / Export",
+    "Import / export",
     fluidPage(
       h3("CSV import and export"),
       p(strong("This app does not store your data between sessions.")),
@@ -1209,7 +1209,7 @@ ui <- navbarPage(
         tags$li("A row with a missing or invalid value stops the upload, and the message names the row. Your current history stays as it was."),
         tags$li("A row whose values break the expected order, or look like an entry error, is imported as a compromised record.")
       ),
-      helpText("If you're unsure of the format, start from the Example CSV."),
+      helpText("If you're unsure of the format, start from the example CSV."),
       fluidRow(
         column(
           width = 6,
@@ -1217,7 +1217,7 @@ ui <- navbarPage(
         ),
         column(
           width = 6,
-          downloadButton("download_example_csv", "Download Example CSV"),
+          downloadButton("download_example_csv", "Download example CSV"),
           br(), br(),
           downloadButton("download_history", "Download history CSV")
         )
@@ -1309,7 +1309,7 @@ server <- function(input, output, session) {
     } else if (current_validation()$outputs_withheld) {
       "Next: save the raw values for your records. A replacement testing block is needed for a normal profile."
     } else {
-      "Next: review the profile, then save it to history. Download your history from Import / Export to keep it."
+      "Next: review the profile, then save it to history. Download your history from Import / export to keep it."
     }
 
     tags$div(
