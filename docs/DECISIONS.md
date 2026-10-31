@@ -243,3 +243,18 @@ The app uses the Ben Skutnik brand colors: black (#111111) on white, grays for s
 **Review:** CP is a secondary metric (non-negotiables memo). If feedback shows the orange CP line pulls attention away from the tested results, switch it to a gray dashed line and use orange elsewhere.
 
 **Replaces:** the blue-and-orange chart colors discussed for 1.2.0, which weren't built.
+
+
+## D-020: Running mode
+
+**Date:** 2026-10-31 | **Status:** Decided
+
+The app supports running as well as ergometers. Runners complete the same fixed-time tests (45 s, 3, 6, 10, and 20 min) and enter the distance covered in meters, kilometers, or miles. The app stores meters and shows pace. Critical speed (CS) and D′ replace CP and W′ for running blocks. One app serves both sports, and each testing block records its sport.
+
+Running tests can be done on a track, outdoors with a GPS watch, or on a manual (self-powered) treadmill: AssaultRunner Pro, AssaultRunner Elite, TrueForm Runner, Woodway Curve, or another manual treadmill. Motorized treadmills are not supported. Running charts plot speed, with the axis labeled in pace. The app keeps its current name for now.
+
+The full plan is in `docs/running_mode_spec.md`.
+
+**Why:** users asked for running. The model math is the same: distance = CS × time + D′ has the same form as work = CP × time + W′, and the power-law curve fits speed the same way it fits power. Fixed-time tests keep the 5-duration structure that validation, predictions, and comparisons depend on. On a motorized treadmill the belt sets the speed, so a maximal fixed-time effort doesn't measure what the runner can produce. Runners read pace, and plotting speed keeps faster at the top, as on the ergometer chart.
+
+**Replaces:** the ergometer-only scope in `01_project_definition_memo.md`.
