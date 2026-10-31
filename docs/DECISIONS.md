@@ -225,3 +225,15 @@ Simulation suggests about 6% of honest testing blocks may break the descending o
 **Date:** 2026-10-19 | **Status:** Implemented
 
 Decisions and their reasons go in this file. User-facing changes go in `CHANGELOG.md`. Planning documents live in `docs/`. Commit messages record each implementation step.
+
+## D-019: Brand colors
+
+**Date:** 2026-10-30 | **Status:** Implemented (1.2.0)
+
+The app uses the Ben Skutnik brand colors: black (#111111) on white, grays for secondary marks, one system font stack, and orange (#E4572E) as the only accent color. Orange marks estimated CP on Historical trends. The 5 test durations are grays, darkest for 45 s and lightest for 20 min, each labeled at its latest point.
+
+**Why:** the app matches the brand's other apps. With orange as the only accent, it marks exactly one series.
+
+**Review:** CP is a secondary metric (non-negotiables memo). If feedback shows the orange CP line pulls attention away from the tested results, switch it to a gray dashed line and use orange elsewhere.
+
+**Replaces:** the blue-and-orange chart colors discussed for 1.2.0, which weren't built.

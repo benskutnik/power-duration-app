@@ -200,6 +200,7 @@ check("Missing required columns: upload rejected", is.character(r) && grepl("mis
 all_outputs <- c(
   "completion_status", "validation_box", "pd_plot", "summary_table", "prediction_table",
   "training_targets_table", "comparison_table", "overlay_plot", "history_plot",
+  "overlay_plot_area", "history_plot_area",
   "history_table", "history_action_status", "save_status"
 )
 

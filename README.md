@@ -41,7 +41,7 @@ The app stores nothing between sessions. Download your history CSV from the Impo
 
 ## Run it locally
 
-1. Install R and these packages: `shiny`, `ggplot2`, `dplyr`, `readr`, `scales`, `tidyr`, `DT`.
+1. Install R and these packages: `shiny`, `ggplot2`, `dplyr`, `readr`, `scales`, `tidyr`, `DT`, `bslib`, `ggrepel`.
 2. Open this folder in Positron or RStudio.
 3. In the console, run `shiny::runApp()`.
 
