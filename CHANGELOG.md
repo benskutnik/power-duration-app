@@ -21,7 +21,7 @@ User-facing changes to the Power-Duration App.
 - The saved test history table has a Sport column. Ergometer results show in watts and running results as pace.
 - The predicted-results table on Training targets shows each value with its unit, such as "352 W".
 - Import / export lists the columns for ergometer and running rows. Each athlete, start date, and sport can appear once in a file.
-- Notes on Current test entry, Historical comparison, and Training targets cover both sports. "Predicted power by duration" is now "Predicted results by duration".
+- Notes on Current test entry, Historical comparison, and Training targets cover both sports. "Predicted power by duration" is now "Predicted results by duration". 
 
 ## 1.2.1 (2026-10-31)
 
