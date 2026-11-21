@@ -228,6 +228,15 @@ run_setting_options <- c(
 # The dropdown options for each sport's equipment column.
 equipment_choices <- list(Ergometer = equipment_options, Running = run_setting_options)
 
+# Entry form boxes for running distances, entered in the block's unit.
+distance_input_ids <- c(
+  "45 s" = "distance_45s",
+  "3 min" = "distance_3min",
+  "6 min" = "distance_6min",
+  "10 min" = "distance_10min",
+  "20 min" = "distance_20min"
+)
+
 # Every uploaded file needs these. The result columns each row needs depend
 # on its sport (D-022).
 history_required_cols <- c("athlete_name", "test_date")
@@ -1505,15 +1514,39 @@ ui <- navbarPage(
         h4("Enter current test"),
         p("New user? Read the Testing protocol tab before your first testing block."),
         p("After the block, enter all 5 results here. The profile updates as you type. Save it to add it to this session's history."),
+        # One sport per testing block (D-020). Each sport keeps its own
+        # equipment and result boxes, shown only while that sport is chosen.
+        radioButtons("sport", "Sport", choices = names(sport_settings), selected = "Ergometer", inline = TRUE),
         textInput("athlete_name", "Athlete name"),
         dateInput("test_date", "Testing block start date", value = Sys.Date()),
         helpText("The day you did the 45-second test."),
-        selectInput("ergometer_type", "Ergometer", choices = equipment_options, selected = "Not specified"),
+        conditionalPanel(
+          "input.sport == 'Ergometer'",
+          selectInput("ergometer_type", "Ergometer", choices = equipment_options, selected = "Not specified")
+        ),
+        conditionalPanel(
+          "input.sport == 'Running'",
+          selectInput("run_setting", "Running setting", choices = run_setting_options, selected = "Not specified"),
+          helpText("Motorized treadmills aren't supported."),
+          radioButtons(
+            "distance_unit", "Distance unit",
+            choices = c("Meters" = "m", "Kilometers" = "km", "Miles" = "mi"),
+            selected = "m", inline = TRUE
+          )
+        ),
         checkboxInput("protocol_confirmed", "I followed the testing protocol closely", value = FALSE),
         checkboxGroupInput(
           "context_flags",
           "Did anything affect this testing block? (optional)",
           choices = context_flags_for("Ergometer")
+        ),
+        conditionalPanel(
+          "input.sport == 'Running'",
+          checkboxGroupInput(
+            "running_context_flags",
+            "Running conditions (optional)",
+            choices = sport_settings$Running$extra_context_flags
+          )
         ),
         textAreaInput("notes", "Notes (optional)", rows = 3, placeholder = "Anything else worth recording about this block"),
         selectInput(
@@ -1523,11 +1556,20 @@ ui <- navbarPage(
           selected = "Complete"
         ),
         tags$hr(),
-        numericInput("power_45s", "45 s average power (W)", value = NA, min = 1),
-        numericInput("power_3min", "3 min average power (W)", value = NA, min = 1),
-        numericInput("power_6min", "6 min average power (W)", value = NA, min = 1),
-        numericInput("power_10min", "10 min average power (W)", value = NA, min = 1),
-        numericInput("power_20min", "20 min average power (W)", value = NA, min = 1),
+        conditionalPanel(
+          "input.sport == 'Ergometer'",
+          numericInput("power_45s", "45 s average power (W)", value = NA, min = 1),
+          numericInput("power_3min", "3 min average power (W)", value = NA, min = 1),
+          numericInput("power_6min", "6 min average power (W)", value = NA, min = 1),
+          numericInput("power_10min", "10 min average power (W)", value = NA, min = 1),
+          numericInput("power_20min", "20 min average power (W)", value = NA, min = 1)
+        ),
+        conditionalPanel(
+          "input.sport == 'Running'",
+          lapply(names(distance_input_ids), function(label) {
+            numericInput(distance_input_ids[[label]], paste0(label, " distance (m)"), value = NA, min = 0)
+          })
+        ),
         tags$hr(),
         actionButton("save_test", "Save current test to history", class = "btn-primary"),
         br(), br(),
@@ -1648,20 +1690,37 @@ server <- function(input, output, session) {
   save_status_message <- reactiveVal("")
 
   current_inputs <- reactive({
+    running <- identical(input$sport, "Running")
     build_test_dataframe(list(
       athlete_name = input$athlete_name,
       test_date = input$test_date,
+      sport = input$sport,
       power_45s = input$power_45s,
       power_3min = input$power_3min,
       power_6min = input$power_6min,
       power_10min = input$power_10min,
       power_20min = input$power_20min,
+      distance_45s = input$distance_45s,
+      distance_3min = input$distance_3min,
+      distance_6min = input$distance_6min,
+      distance_10min = input$distance_10min,
+      distance_20min = input$distance_20min,
+      distance_unit = input$distance_unit,
       notes = input$notes,
       ergometer_type = input$ergometer_type,
+      run_setting = input$run_setting,
       protocol_confirmed = input$protocol_confirmed,
       test_validity_flag = input$test_validity_flag,
-      context_flags = input$context_flags
+      # Running conditions count only for running blocks (D-021).
+      context_flags = c(input$context_flags, if (running) input$running_context_flags)
     ))
+  })
+
+  # Distance labels show the chosen unit, such as "45 s distance (km)".
+  observeEvent(input$distance_unit, {
+    for (label in names(distance_input_ids)) {
+      updateNumericInput(session, distance_input_ids[[label]], label = paste0(label, " distance (", input$distance_unit, ")"))
+    }
   })
 
   current_validation <- reactive({
@@ -2117,12 +2176,21 @@ server <- function(input, output, session) {
     # Optional text fields can be missing in uploaded files; show them as blank.
     text_or_blank <- function(x) if (is.na(x)) "" else as.character(x)
 
+    sport <- sport_of(record$sport)
+    unit <- if (sport == "Running") distance_unit_of(record) else "m"
+    flags <- split_context_flags(record$context_flags)
+    running_flags <- sport_settings$Running$extra_context_flags
+
+    updateRadioButtons(session, "sport", selected = sport)
     updateTextInput(session, "athlete_name", value = record$athlete_name)
     updateDateInput(session, "test_date", value = record$test_date)
     updateSelectInput(session, "ergometer_type", selected = match_equipment(record$ergometer_type))
+    updateSelectInput(session, "run_setting", selected = match_equipment(record$run_setting, "Running"))
+    updateRadioButtons(session, "distance_unit", selected = unit)
     updateTextAreaInput(session, "notes", value = text_or_blank(record$notes))
     updateCheckboxInput(session, "protocol_confirmed", value = isTRUE(record$protocol_confirmed))
-    updateCheckboxGroupInput(session, "context_flags", selected = split_context_flags(record$context_flags))
+    updateCheckboxGroupInput(session, "context_flags", selected = setdiff(flags, running_flags))
+    updateCheckboxGroupInput(session, "running_context_flags", selected = intersect(flags, running_flags))
     updateSelectInput(
       session, "test_validity_flag",
       selected = if (is.na(record$test_validity_flag)) "Complete" else record$test_validity_flag
@@ -2132,6 +2200,13 @@ server <- function(input, output, session) {
     updateNumericInput(session, "power_6min", value = record$power_6min)
     updateNumericInput(session, "power_10min", value = record$power_10min)
     updateNumericInput(session, "power_20min", value = record$power_20min)
+
+    # Distances are stored in meters and shown in the block's unit.
+    distance_columns <- sport_settings$Running$result_columns
+    for (label in names(distance_input_ids)) {
+      meters <- record[[distance_columns[[label]]]]
+      updateNumericInput(session, distance_input_ids[[label]], value = round(meters / meters_per_unit[[unit]], 3))
+    }
 
     updateNavbarPage(session, "main_tabs", selected = "Current Test Entry")
     save_status_message(paste0(

@@ -459,6 +459,25 @@ suppressWarnings(testServer(server, {
   writeLines(c(header, "Sam,2026-03-02,abc,410,360,330,295"), bad_path)
   session$setInputs(upload_history = list(datapath = bad_path, name = "bad.csv"))
   check("Server: a rejected upload leaves history unchanged", nrow(history_data()) == 2)
+
+  session$setInputs(
+    sport = "Running", athlete_name = "Ann", test_date = as.Date("2026-06-01"),
+    distance_unit = "km", run_setting = "Track", running_context_flags = "Wind", context_flags = NULL,
+    distance_45s = 0.27, distance_3min = 0.87, distance_6min = 1.61, distance_10min = 2.58, distance_20min = 4.99
+  )
+  check("Server: running entry reads km as meters and includes running conditions",
+        current_inputs()$sport == "Running" && current_inputs()$distance_20min_m == 4990 &&
+          current_inputs()$context_flags == "Wind")
+
+  broken <- broken_outputs(session)
+  check("Server: running entry shows every output without crashing", length(broken) == 0, broken)
+
+  session$setInputs(save_test = 6)
+  check("Server: running entry saves as a running record",
+        nrow(history_data()) == 3 && sum(history_data()$sport == "Running") == 1)
+
+  session$setInputs(sport = "Ergometer")
+  check("Server: running conditions are ignored for ergometer blocks", current_inputs()$context_flags == "")
 }))
 
 # ------------------------------

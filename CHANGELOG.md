@@ -6,6 +6,7 @@ User-facing changes to the Power-Duration App.
 
 ### Added
 
+- Running testing blocks. Choose Running under Sport on the entry form to enter the distance covered in each timed test, in meters, kilometers, or miles, along with where you ran and running conditions such as wind or hills.
 - History CSV files can include running testing blocks: a `sport` column, 5 distance columns in meters, a display unit, and a running setting. Files without a `sport` column upload as ergometer tests, as before.
 - The example CSV includes a running row.
 
