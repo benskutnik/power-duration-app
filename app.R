@@ -228,10 +228,9 @@ run_setting_options <- c(
 # The dropdown options for each sport's equipment column.
 equipment_choices <- list(Ergometer = equipment_options, Running = run_setting_options)
 
-history_required_cols <- c(
-  "athlete_name", "test_date", "power_45s", "power_3min", "power_6min",
-  "power_10min", "power_20min"
-)
+# Every uploaded file needs these. The result columns each row needs depend
+# on its sport (D-022).
+history_required_cols <- c("athlete_name", "test_date")
 
 history_optional_cols <- c(
   "notes", "ergometer_type", "protocol_confirmed", "test_validity_flag", "context_flags",
@@ -364,22 +363,24 @@ build_test_dataframe <- function(input_list) {
   )
 }
 
-# The unique profile key is the athlete name plus the block start date (D-013).
-# Names are trimmed, internal spaces collapsed, and lowercased, so
-# "Sam Smith" and "sam  smith" on the same date are the same profile.
+# The unique profile key is the athlete name, block start date, and sport
+# (D-013, D-022). Names are trimmed, internal spaces collapsed, and
+# lowercased, so "Sam Smith" and "sam  smith" on the same date are the
+# same profile.
 normalize_athlete_name <- function(name) {
   tolower(gsub("\\s+", " ", trimws(as.character(name))))
 }
 
-make_profile_key <- function(athlete_name, test_date) {
-  paste(normalize_athlete_name(athlete_name), as.character(as.Date(test_date)), sep = "|")
+make_profile_key <- function(athlete_name, test_date, sport = NULL) {
+  paste(normalize_athlete_name(athlete_name), as.character(as.Date(test_date)), sport_of(sport), sep = "|")
 }
 
 
 # Equipment is compared case-insensitively, and blank or missing means
 # "not specified". Two tests are comparable when they name the same
-# equipment or both leave it unspecified. "Other" is never comparable,
-# since two "Other" machines may differ (D-010).
+# equipment or both leave it unspecified. "Other" and "Other manual
+# treadmill" are never comparable, since two such machines may differ
+# (D-010, D-022).
 normalize_equipment <- function(x) {
   x <- tolower(trimws(as.character(x)))
   x[is.na(x)] <- ""
@@ -389,20 +390,22 @@ normalize_equipment <- function(x) {
 equipment_comparable <- function(a, b) {
   a <- normalize_equipment(a)
   b <- normalize_equipment(b)
-  a == b & a != "other"
+  a == b & !(a %in% c("other", "other manual treadmill"))
 }
 
-describe_equipment <- function(x) {
-  if (normalize_equipment(x) == "") "unspecified equipment" else as.character(x)
+describe_equipment <- function(x, sport = "Ergometer") {
+  if (normalize_equipment(x) != "") return(as.character(x))
+  if (sport == "Running") "an unspecified setting" else "unspecified equipment"
 }
 
 
-# Match stored equipment text to a dropdown option, ignoring case (D-012).
-# Blank means not specified; anything unrecognized becomes "Other".
-match_equipment <- function(x) {
+# Match stored equipment text to a sport's dropdown option, ignoring case
+# (D-012). Blank means not specified; anything unrecognized becomes "Other".
+match_equipment <- function(x, sport = "Ergometer") {
   key <- normalize_equipment(x)
-  if (key == "") return("Not specified")
-  hit <- equipment_options[tolower(equipment_options) == key]
+  if (length(key) == 0 || key == "") return("Not specified")
+  options <- equipment_choices[[sport]]
+  hit <- options[tolower(options) == key]
   if (length(hit) == 1) hit else "Other"
 }
 
@@ -486,17 +489,33 @@ parse_validity_flag <- function(x) {
   if (length(hit) == 1) hit else NA_character_
 }
 
-parse_context_flags <- function(x) {
+parse_context_flags <- function(x, sport = "Ergometer") {
   parts <- split_context_flags(x)
-  known <- names(context_flag_levels)
+  known <- context_flags_for(sport)
   matched <- known[match(tolower(parts), tolower(known))]
   if (any(is.na(matched))) NULL else matched
 }
 
+# Blank means Ergometer (D-022).
+parse_sport <- function(x) {
+  x <- trimws(as.character(x))
+  if (is.na(x) || x == "") return("Ergometer")
+  hit <- names(sport_settings)[tolower(names(sport_settings)) == tolower(x)]
+  if (length(hit) == 1) hit else NA_character_
+}
+
+# Blank means meters (spec section 7).
+parse_distance_unit <- function(x) {
+  x <- tolower(trimws(as.character(x)))
+  if (is.na(x) || x == "") return("m")
+  if (x %in% names(meters_per_unit)) x else NA_character_
+}
+
 # The baseline for history checks and comparisons is the most recent earlier
-# test for the same athlete that produced a normal profile and used
-# comparable equipment (D-010). When the most recent earlier normal test used
-# different equipment, the returned note says so instead of comparing wattage.
+# test for the same athlete and sport that produced a normal profile and used
+# comparable equipment (D-010, D-022). When the most recent earlier normal
+# test used different equipment, the returned note says so instead of
+# comparing results.
 find_baseline <- function(test_row, history_df) {
   none <- list(baseline = NULL, note = NULL)
 
@@ -504,9 +523,11 @@ find_baseline <- function(test_row, history_df) {
     return(none)
   }
 
+  row_sport <- sport_of(test_row[["sport"]])
   earlier_normal <- history_df %>%
     filter(
       normalize_athlete_name(athlete_name) == normalize_athlete_name(test_row$athlete_name),
+      sport_of(sport) == row_sport,
       test_date < test_row$test_date,
       !(retest_level %in% "Retest recommended")
     ) %>%
@@ -516,16 +537,28 @@ find_baseline <- function(test_row, history_df) {
     return(none)
   }
 
-  comparable <- equipment_comparable(earlier_normal$ergometer_type, test_row$ergometer_type)
+  equipment_column <- settings_for(test_row)$equipment_column
+  earlier_equipment <- earlier_normal[[equipment_column]]
+  current_equipment <- test_row[[equipment_column]]
+  comparable <- equipment_comparable(earlier_equipment, current_equipment)
 
   note <- NULL
   if (!comparable[1]) {
-    note <- paste0(
-      "Your most recent earlier test (", format(earlier_normal$test_date[1]), ") was on ",
-      describe_equipment(earlier_normal$ergometer_type[1]), ", and this one is on ",
-      describe_equipment(test_row$ergometer_type),
-      ". Results on equipment that can't be confirmed as the same aren't compared by wattage."
-    )
+    note <- if (row_sport == "Running") {
+      paste0(
+        "Your most recent earlier running test (", format(earlier_normal$test_date[1]), ") used ",
+        describe_equipment(earlier_equipment[1], row_sport), ", and this one used ",
+        describe_equipment(current_equipment, row_sport),
+        ". Results from settings that can't be confirmed as the same aren't compared by pace."
+      )
+    } else {
+      paste0(
+        "Your most recent earlier test (", format(earlier_normal$test_date[1]), ") was on ",
+        describe_equipment(earlier_equipment[1]), ", and this one is on ",
+        describe_equipment(current_equipment),
+        ". Results on equipment that can't be confirmed as the same aren't compared by wattage."
+      )
+    }
   }
 
   list(
@@ -534,11 +567,14 @@ find_baseline <- function(test_row, history_df) {
   )
 }
 
+# The 5 results in long form for modeling and plotting. For running records,
+# power_w holds speed in m/s; the column is renamed when the charts are
+# updated for running (build step 8).
 to_long_profile <- function(test_row) {
   tibble(
     duration_label = factor(names(test_durations), levels = names(test_durations)),
     duration_sec = unname(test_durations),
-    power_w = test_values(test_row)
+    power_w = test_rates(test_row)
   )
 }
 
@@ -549,25 +585,22 @@ results_incomplete <- function(test_row) {
   any(is.na(test_values(test_row)))
 }
 
-# Check a test entry in 3 layers (see docs/DECISIONS.md, D-005 to D-010):
+# Check a test entry in 3 layers (see docs/DECISIONS.md, D-005 to D-010, D-021):
 # 1. Hard input errors block calculation and saving.
 # 2. Ordering failures, suspected entry errors, and sessions the user marked
 #    Compromised or Retest needed withhold model outputs. Raw values can be
 #    saved as a compromised record.
 # 3. Soft warnings allow outputs but raise the retest level.
 validate_test_values <- function(test_row, history_df = NULL) {
-  watts <- test_values(test_row)
+  values <- test_values(test_row)
   duration_names <- names(test_durations)
 
-  # Limits for this record's sport (D-005 to D-007).
+  # Limits for this record's sport. Running messages show pace (D-021).
   s <- settings_for(test_row)
-  max_20min_power_w <- s$max_20min_value
-  outlier_ratio_limits <- s$outlier_ratio_limits
-  near_flat_decline <- s$near_flat_decline
-  steep_ratio_45s_3min <- s$steep_ratio_45s_3min
-  steep_decline_limits <- s$steep_decline_limits
-  curve_shape_limit <- s$curve_shape_limit
-  history_mismatch_limit <- s$history_mismatch_limit
+  running <- s$speed_based
+  unit <- distance_unit_of(test_row)
+  shown <- function(rate) if (running) format_pace(rate, unit) else paste0(round(rate), " W")
+  measure <- if (running) "pace" else "value"
 
   errors <- character()
   withheld_reasons <- character()
@@ -584,7 +617,7 @@ validate_test_values <- function(test_row, history_df = NULL) {
     flags <<- c(flags, flag)
   }
 
-  # Layer 1: hard input errors (D-006).
+  # Layer 1: hard input errors (D-006, D-021).
   if (is.na(test_row$athlete_name) || test_row$athlete_name == "") {
     errors <- c(errors, "Athlete name is required.")
   }
@@ -593,36 +626,53 @@ validate_test_values <- function(test_row, history_df = NULL) {
     errors <- c(errors, "Testing block start date is required.")
   }
 
-  if (any(is.na(watts) | !is.finite(watts))) {
-    errors <- c(errors, "All 5 watt values are required and must be numbers.")
-  } else if (any(watts <= 0)) {
-    errors <- c(errors, "All watt values must be greater than zero.")
-  } else if (watts[5] > max_20min_power_w) {
+  value_word <- if (running) "distance" else "watt"
+  if (any(is.na(values) | !is.finite(values))) {
+    errors <- c(errors, paste0("All 5 ", value_word, " values are required and must be numbers."))
+  } else if (any(values <= 0)) {
+    errors <- c(errors, paste0("All ", value_word, " values must be greater than zero."))
+  } else if (!running && values[5] > s$max_20min_value) {
     errors <- c(errors, paste0(
-      "The 20 min value (", round(watts[5]), " W) is above ", max_20min_power_w,
+      "The 20 min value (", round(values[5]), " W) is above ", s$max_20min_value,
       " W, beyond world-class 20-minute power. Check that you entered average watts, not calories or pace."
+    ))
+  } else if (running && (values[5] < s$min_20min_value || values[5] > s$max_20min_value)) {
+    errors <- c(errors, paste0(
+      "The 20 min distance (", format_distance(values[5], unit), ") is outside the expected range of ",
+      format_distance(s$min_20min_value, unit), " to ", format_distance(s$max_20min_value, unit),
+      ". Check the distances and the unit you chose."
     ))
   }
 
-  # Layer 2: ordering failures and suspected entry errors (D-005, D-017).
-  # Checked pair by pair, so each message names the 2 values involved.
+  rates <- test_rates(test_row)
+
+  # Layer 2: ordering failures and suspected entry errors (D-005, D-017, D-021).
+  # Checked pair by pair, so each message names the 2 results involved.
   if (length(errors) == 0) {
     for (i in 1:4) {
-      shorter <- watts[i]
-      longer <- watts[i + 1]
+      shorter <- rates[i]
+      longer <- rates[i + 1]
+      reversed <- if (running) longer > shorter * (1 + s$reversal_tolerance) else shorter <= longer
 
-      if (shorter <= longer) {
+      if (reversed && running) {
         withheld_reasons <- c(withheld_reasons, paste0(
-          "The ", duration_names[i], " value (", round(shorter), " W) should be higher than the ",
-          duration_names[i + 1], " value (", round(longer), " W). Correct the entry, or retest the ",
+          "Your ", duration_names[i + 1], " pace (", shown(longer), ") is more than ",
+          s$reversal_tolerance * 100, "% faster than your ", duration_names[i], " pace (", shown(shorter),
+          "). Correct the entry, or retest the ", duration_names[i], " or ", duration_names[i + 1], " effort."
+        ))
+        flags <- c(flags, "order_violation")
+      } else if (reversed) {
+        withheld_reasons <- c(withheld_reasons, paste0(
+          "The ", duration_names[i], " value (", shown(shorter), ") should be higher than the ",
+          duration_names[i + 1], " value (", shown(longer), "). Correct the entry, or retest the ",
           duration_names[i], " or ", duration_names[i + 1], " effort."
         ))
         flags <- c(flags, "order_violation")
-      } else if (shorter / longer > outlier_ratio_limits[i]) {
+      } else if (shorter / longer > s$outlier_ratio_limits[i]) {
         withheld_reasons <- c(withheld_reasons, paste0(
-          "The ", duration_names[i], " value (", round(shorter), " W) is more than ",
-          outlier_ratio_limits[i], " times the ", duration_names[i + 1], " value (",
-          round(longer), " W). One of these is likely an entry error."
+          "The ", duration_names[i], " ", measure, " (", shown(shorter), ") is more than ",
+          s$outlier_ratio_limits[i], if (running) " times as fast as the " else " times the ",
+          duration_names[i + 1], " ", measure, " (", shown(longer), "). One of these is likely an entry error."
         ))
         flags <- c(flags, "suspected_entry_error")
       }
@@ -653,32 +703,51 @@ validate_test_values <- function(test_row, history_df = NULL) {
     flags <- c(flags, "interrupted_effort")
   }
 
-  # Layer 3: soft warnings (D-007), only for profiles that will be modeled.
+  # Layer 3: soft warnings (D-007, D-021), only for profiles that will be modeled.
   if (length(errors) == 0 && length(withheld_reasons) == 0) {
-    declines <- 1 - watts[2:5] / watts[1:4]
+    declines <- 1 - rates[2:5] / rates[1:4]
 
-    for (i in 1:4) {
-      if (declines[i] <= near_flat_decline) {
-        add_warning(paste0(
-          "Your ", duration_names[i], " and ", duration_names[i + 1], " results are within ",
-          near_flat_decline * 100, "% of each other. Check the entries, and whether both efforts were maximal."
-        ), 1, "near_flat")
+    if (!is.na(s$near_flat_decline)) {
+      for (i in 1:4) {
+        if (declines[i] <= s$near_flat_decline) {
+          add_warning(paste0(
+            "Your ", duration_names[i], " and ", duration_names[i + 1], " results are within ",
+            s$near_flat_decline * 100, "% of each other. Check the entries, and whether both efforts were maximal."
+          ), 1, "near_flat")
+        }
       }
     }
 
-    ratio_45s_3min <- watts[1] / watts[2]
-    if (ratio_45s_3min > steep_ratio_45s_3min) {
-      add_warning(paste0(
-        "Your 45 s power is ", round(ratio_45s_3min, 1), " times your 3 min power, steeper than most profiles. ",
-        "Check the entry. If it matches your earlier tests, it likely reflects your profile."
-      ), 1, "steep_45s_3min")
+    # Running only: a longer test as fast as, or slightly faster than, the
+    # one before it (D-021). Larger reversals were withheld above.
+    if (running) {
+      for (i in 1:4) {
+        if (declines[i] <= 0) {
+          add_warning(paste0(
+            "Your ", duration_names[i + 1], " pace (", shown(rates[i + 1]), ") is as fast as or faster than your ",
+            duration_names[i], " pace (", shown(rates[i]), "). A small difference like this can come from ",
+            "normal day-to-day variation or GPS error. Check both entries."
+          ), 1, "small_reversal")
+        }
+      }
     }
 
-    for (i in 2:4) {
-      if (declines[i] > steep_decline_limits[i]) {
+    if (!is.na(s$steep_ratio_45s_3min)) {
+      ratio_45s_3min <- rates[1] / rates[2]
+      if (ratio_45s_3min > s$steep_ratio_45s_3min) {
         add_warning(paste0(
-          "Power drops ", round(declines[i] * 100), "% from ", duration_names[i], " to ",
-          duration_names[i + 1], ", above the app's ", steep_decline_limits[i] * 100,
+          "Your 45 s power is ", round(ratio_45s_3min, 1), " times your 3 min power, steeper than most profiles. ",
+          "Check the entry. If it matches your earlier tests, it likely reflects your profile."
+        ), 1, "steep_45s_3min")
+      }
+    }
+
+    for (i in 1:4) {
+      limit <- s$steep_decline_limits[i]
+      if (!is.na(limit) && declines[i] > limit) {
+        add_warning(paste0(
+          if (running) "Speed drops " else "Power drops ", round(declines[i] * 100), "% from ",
+          duration_names[i], " to ", duration_names[i + 1], ", above the app's ", limit * 100,
           "% check. This can reflect pacing, fatigue, or an entry error."
         ), 2, "steep_decline")
       }
@@ -688,10 +757,10 @@ validate_test_values <- function(test_row, history_df = NULL) {
     # curve (in log-log space) fitted to all 5. This is a quality check only;
     # the displayed curve still comes from the power-law fit.
     log_duration <- log(unname(test_durations))
-    shape_fit <- lm(log(watts) ~ log_duration + I(log_duration^2))
+    shape_fit <- lm(log(rates) ~ log_duration + I(log_duration^2))
     shape_gap <- exp(residuals(shape_fit)) - 1
     for (i in 2:4) {
-      if (abs(shape_gap[i]) > curve_shape_limit) {
+      if (abs(shape_gap[i]) > s$curve_shape_limit) {
         add_warning(paste0(
           "Your ", duration_names[i], " result is ", round(abs(shape_gap[i]) * 100), "% ",
           if (shape_gap[i] > 0) "above" else "below",
@@ -720,10 +789,11 @@ validate_test_values <- function(test_row, history_df = NULL) {
     }
     baseline <- baseline_info$baseline
     if (!is.null(baseline)) {
-      baseline_watts <- test_values(baseline)
-      if (any(abs(watts / baseline_watts - 1) > history_mismatch_limit, na.rm = TRUE)) {
+      compared <- s$history_tests
+      baseline_rates <- test_rates(baseline)
+      if (any(abs(rates[compared] / baseline_rates[compared] - 1) > s$history_mismatch_limit, na.rm = TRUE)) {
         add_warning(paste0(
-          "At least one result differs by more than ", history_mismatch_limit * 100,
+          "At least one result differs by more than ", s$history_mismatch_limit * 100,
           "% from your previous comparable test (", format(baseline$test_date),
           "). This may reflect real change, fatigue, or a testing inconsistency."
         ), 2, "history_mismatch")
@@ -1055,8 +1125,8 @@ recompute_uploaded_history <- function(history_df) {
 # recomputed in date order, because a change to one record can change the
 # history checks on later ones (D-011).
 upsert_history_record <- function(history_df, record) {
-  record_key <- make_profile_key(record$athlete_name, record$test_date)
-  existing_keys <- make_profile_key(history_df$athlete_name, history_df$test_date)
+  record_key <- make_profile_key(record$athlete_name, record$test_date, record$sport)
+  existing_keys <- make_profile_key(history_df$athlete_name, history_df$test_date, history_df$sport)
   kept <- history_df[existing_keys != record_key, , drop = FALSE]
   recompute_uploaded_history(bind_rows(kept, record))
 }
@@ -1086,9 +1156,9 @@ read_history_csv <- function(path, slash_order = "auto") {
   validate_history_file(raw, slash_order)
 }
 
-# Validate an uploaded history file (D-012). Returns the recomputed history
-# and the number of rows imported as compromised. Any problem stops the
-# upload with a message naming the rows, and existing history is unchanged.
+# Validate an uploaded history file (D-012, D-022). Returns the recomputed
+# history and the number of rows imported as compromised. Any problem stops
+# the upload with a message naming the rows, and existing history is unchanged.
 validate_history_file <- function(df, slash_order = "mdy") {
   missing_required <- setdiff(history_required_cols, names(df))
   if (length(missing_required) > 0) {
@@ -1102,6 +1172,19 @@ validate_history_file <- function(df, slash_order = "mdy") {
   # Optional columns may be absent; treat them as blank.
   optional_text <- function(col) {
     if (col %in% names(df)) df[[col]] else rep(NA_character_, nrow(df))
+  }
+
+  # Each row needs the 5 result columns for its own sport (D-022). A file
+  # with only ergometer rows needs only the power columns.
+  sports <- vapply(optional_text("sport"), parse_sport, character(1), USE.NAMES = FALSE)
+  needed <- unlist(lapply(unique(sports[!is.na(sports)]), function(sp) unname(sport_settings[[sp]]$result_columns)))
+  missing_results <- setdiff(needed, names(df))
+  if (length(missing_results) > 0) {
+    stop(paste0("The file is missing required columns: ", paste(missing_results, collapse = ", "), "."))
+  }
+
+  number <- function(col, i) {
+    if (col %in% names(df)) suppressWarnings(as.numeric(df[[col]][i])) else NA_real_
   }
 
   problems <- character()
@@ -1119,27 +1202,51 @@ validate_history_file <- function(df, slash_order = "mdy") {
       row_problems <- c(row_problems, paste0("test_date \"", raw_date, "\" isn't a date like 2026-03-02 or 3/2/2026"))
     }
 
+    sport <- sports[i]
+    if (is.na(sport)) {
+      row_problems <- c(row_problems, "sport must be Ergometer or Running")
+      sport <- "Ergometer"
+    }
+    running <- sport == "Running"
+
+    unit <- parse_distance_unit(optional_text("distance_unit")[i])
+    if (running && is.na(unit)) row_problems <- c(row_problems, "distance_unit must be m, km, or mi")
+
     protocol <- parse_protocol_confirmed(optional_text("protocol_confirmed")[i])
     validity <- parse_validity_flag(optional_text("test_validity_flag")[i])
-    flags <- parse_context_flags(optional_text("context_flags")[i])
+    flags <- parse_context_flags(optional_text("context_flags")[i], sport)
 
     if (is.na(protocol)) row_problems <- c(row_problems, "protocol_confirmed must be TRUE/FALSE, yes/no, or 1/0")
     if (is.na(validity)) row_problems <- c(row_problems, "test_validity_flag must be Complete, Compromised, or Retest needed")
     if (is.null(flags)) row_problems <- c(row_problems, "context_flags contains an unrecognized flag")
 
-    equipment <- match_equipment(optional_text("ergometer_type")[i])
+    equipment <- match_equipment(optional_text("ergometer_type")[i], "Ergometer")
+    setting <- match_equipment(optional_text("run_setting")[i], "Running")
     notes <- optional_text("notes")[i]
+
+    # A row keeps only its own sport's results; the other sport's columns
+    # are ignored (D-022).
+    ergometer_number <- function(col) if (running) NA_real_ else number(col, i)
+    running_number <- function(col) if (running) number(col, i) else NA_real_
 
     test_row <- tibble(
       athlete_name = trimws(df$athlete_name[i]),
       test_date = test_date,
-      power_45s = suppressWarnings(as.numeric(df$power_45s[i])),
-      power_3min = suppressWarnings(as.numeric(df$power_3min[i])),
-      power_6min = suppressWarnings(as.numeric(df$power_6min[i])),
-      power_10min = suppressWarnings(as.numeric(df$power_10min[i])),
-      power_20min = suppressWarnings(as.numeric(df$power_20min[i])),
+      sport = sport,
+      power_45s = ergometer_number("power_45s"),
+      power_3min = ergometer_number("power_3min"),
+      power_6min = ergometer_number("power_6min"),
+      power_10min = ergometer_number("power_10min"),
+      power_20min = ergometer_number("power_20min"),
+      distance_45s_m = running_number("distance_45s_m"),
+      distance_3min_m = running_number("distance_3min_m"),
+      distance_6min_m = running_number("distance_6min_m"),
+      distance_10min_m = running_number("distance_10min_m"),
+      distance_20min_m = running_number("distance_20min_m"),
+      distance_unit = if (running && !is.na(unit)) unit else if (running) "m" else "",
       notes = if (is.na(notes)) "" else notes,
-      ergometer_type = if (equipment == "Not specified") "" else equipment,
+      ergometer_type = if (running || equipment == "Not specified") "" else equipment,
+      run_setting = if (!running || setting == "Not specified") "" else setting,
       protocol_confirmed = isTRUE(protocol),
       test_validity_flag = if (is.na(validity)) "Complete" else validity,
       context_flags = if (is.null(flags)) "" else paste(flags, collapse = "; ")
@@ -1155,7 +1262,7 @@ validate_history_file <- function(df, slash_order = "mdy") {
     row_problems <- c(row_problems, sub("\\.$", "", input_errors))
 
     if (!is.na(test_row$athlete_name) && test_row$athlete_name != "" && !is.na(test_row$test_date)) {
-      keys[i] <- make_profile_key(test_row$athlete_name, test_row$test_date)
+      keys[i] <- make_profile_key(test_row$athlete_name, test_row$test_date, sport)
     }
 
     # Spreadsheet row numbers: row 1 is the header, so data starts at row 2.
@@ -1176,7 +1283,7 @@ validate_history_file <- function(df, slash_order = "mdy") {
   for (k in unique(keys[!is.na(keys) & duplicated(keys)])) {
     problems <- c(problems, paste0(
       "Rows ", paste(which(keys == k) + 1, collapse = " and "),
-      ": same athlete and start date. Each athlete and start date can appear only once."
+      ": same athlete, start date, and sport. Each can appear only once."
     ))
   }
 
@@ -1843,8 +1950,8 @@ server <- function(input, output, session) {
       )
     }
 
-    record_key <- make_profile_key(record$athlete_name, record$test_date)
-    existing_keys <- make_profile_key(history_data()$athlete_name, history_data()$test_date)
+    record_key <- make_profile_key(record$athlete_name, record$test_date, record$sport)
+    existing_keys <- make_profile_key(history_data()$athlete_name, history_data()$test_date, history_data()$sport)
 
     # Same athlete and start date already saved: ask before replacing.
     if (record_key %in% existing_keys) {
