@@ -45,7 +45,6 @@ The live app runs on Posit Connect Cloud, which redeploys automatically whenever
 1. Open the live app, refresh the page, and repeat a short version of the browser walkthrough. Check it on a phone too.
 2. Optional: on GitHub, draft a release with the tag `vX.Y.Z` on `main`, and paste in that version's changelog section.
 3. Post the update in Discord, as a reply to the original app post.
-4. Re-upload the changed files to the Claude project.
 
 ## Undoing a release
 
