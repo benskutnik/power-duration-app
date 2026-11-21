@@ -39,6 +39,13 @@ test_values <- function(row) {
   vapply(columns, function(col) as.numeric(row[[col]][1]), numeric(1), USE.NAMES = FALSE)
 }
 
+# The 5 results as rates: watts for ergometer tests, and speed in m/s
+# (distance / time) for running (D-020). Every check and model uses rates.
+test_rates <- function(row) {
+  values <- test_values(row)
+  if (settings_for(row)$speed_based) values / unname(test_durations) else values
+}
+
 prediction_durations <- c(
   "1 min" = 60,
   "2 min" = 120,
@@ -70,8 +77,10 @@ confidence_sentences <- c(
   "Model outputs are withheld for this testing block. Correct the entry or complete a replacement block for a normal profile."
 )
 
-# Settings for each sport. A testing block's result columns and validation
-# limits come from its sport's entry. Running is added later (D-020, D-021).
+# Settings for each sport. A testing block's result columns, equipment
+# column, and validation limits come from its sport's entry. Ergometer
+# results are watts (D-005 to D-007). Running results are distances in
+# meters, and the running checks work on speed (D-021).
 sport_settings <- list(
   Ergometer = list(
     result_columns = c(
@@ -81,25 +90,61 @@ sport_settings <- list(
       "10 min" = "power_10min",
       "20 min" = "power_20min"
     ),
+    equipment_column = "ergometer_type",
+    speed_based = FALSE,
+    rate_digits = 0,                                # predicted watts are whole numbers
+    min_20min_value = NA,
     max_20min_value = 600,                          # D-006: above this, likely not watts
     outlier_ratio_limits = c(3.0, 2.0, 2.0, 2.0),   # D-005: shorter / longer, per adjacent pair
+    reversal_tolerance = 0,                         # D-017: any reversal withholds outputs
     near_flat_decline = 0.01,                       # D-007: adjacent decline at or below 1%
     steep_ratio_45s_3min = 2.0,                     # D-007: 45 s / 3 min above this (up to 3.0)
     steep_decline_limits = c(NA, 0.25, 0.20, 0.20), # D-007: 3-6, 6-10, 10-20 min declines
     curve_shape_limit = 0.04,                       # D-007: interior points vs quadratic fit
-    history_mismatch_limit = 0.08                   # D-007: any duration vs baseline record
+    history_mismatch_limit = 0.08,                  # D-007: any duration vs baseline record
+    history_tests = 1:5,                            # D-007: all 5 tests
+    extra_context_flags = character()
+  ),
+  Running = list(
+    result_columns = c(
+      "45 s" = "distance_45s_m",
+      "3 min" = "distance_3min_m",
+      "6 min" = "distance_6min_m",
+      "10 min" = "distance_10min_m",
+      "20 min" = "distance_20min_m"
+    ),
+    equipment_column = "run_setting",
+    speed_based = TRUE,
+    rate_digits = 3,                                # predicted speeds to the nearest mm/s
+    min_20min_value = 1000,                         # D-021: 20 min distance in meters
+    max_20min_value = 8000,                         # D-021
+    outlier_ratio_limits = c(2.0, 1.5, 1.5, 1.5),   # D-021: shorter / longer speed
+    reversal_tolerance = 0.02,                      # D-021: up to 2% faster is a warning
+    near_flat_decline = NA,                         # D-021: not used for running
+    steep_ratio_45s_3min = NA,                      # D-021: covered by the steep-decline check
+    steep_decline_limits = c(0.35, 0.15, 0.12, 0.12), # D-021: speed declines per pair
+    curve_shape_limit = 0.04,                       # D-021
+    history_mismatch_limit = 0.08,                  # D-021
+    history_tests = 2:5,                            # D-021: 3 to 20 min only
+    extra_context_flags = c("Wind", "Heat or humidity", "Hills or uneven ground")
   )
 )
 
-# The settings for one record. A record without a sport is an ergometer
-# test, which covers every history file saved before running was added.
-settings_for <- function(row) {
-  sport <- if ("sport" %in% names(row)) as.character(row$sport[1]) else NA_character_
-  if (is.na(sport) || sport == "") sport <- "Ergometer"
-  sport_settings[[sport]]
+# A record's sport. Blank or missing means Ergometer, which covers every
+# history file saved before running was added.
+sport_of <- function(sport) {
+  if (is.null(sport)) return("Ergometer")
+  sport <- as.character(sport)
+  sport[is.na(sport) | trimws(sport) == ""] <- "Ergometer"
+  sport
 }
 
-# Context flags and their retest levels (D-008):
+# The settings for one record.
+settings_for <- function(row) {
+  sport_settings[[sport_of(row[["sport"]])[1]]]
+}
+
+# Context flags and their retest levels (D-008, D-021):
 # 1 = Keep, but interpret cautiously; 2 = Retest suggested; 3 = Retest recommended.
 context_flag_levels <- c(
   "Interrupted or failed effort" = 3,
@@ -109,8 +154,41 @@ context_flag_levels <- c(
   "Equipment or setup issues" = 2,
   "Poor sleep" = 1,
   "Unusual soreness" = 1,
-  "Disrupted warm-up" = 1
+  "Disrupted warm-up" = 1,
+  "Wind" = 2,
+  "Heat or humidity" = 2,
+  "Hills or uneven ground" = 2
 )
+
+# The context flags offered for a sport: the shared 8, plus running's 3.
+context_flags_for <- function(sport) {
+  extra <- sport_settings[[sport]]$extra_context_flags
+  all_extra <- unlist(lapply(sport_settings, `[[`, "extra_context_flags"))
+  c(setdiff(names(context_flag_levels), all_extra), extra)
+}
+
+# Meters in each distance unit (spec section 3). Distances are stored in meters.
+meters_per_unit <- c(m = 1, km = 1000, mi = 1609.344)
+
+# A record's distance unit, used only for display. Blank means meters.
+distance_unit_of <- function(row) {
+  unit <- row[["distance_unit"]]
+  if (length(unit) == 0 || is.na(unit[1]) || !(unit[1] %in% names(meters_per_unit))) "m" else unit[1]
+}
+
+# Pace for a speed in m/s: per mile for blocks entered in miles, otherwise
+# per km. Rounded to the nearest second.
+format_pace <- function(speed, unit = "m") {
+  per <- if (identical(unit, "mi")) "mi" else "km"
+  seconds <- round(meters_per_unit[[per]] / speed)
+  sprintf("%d:%02d /%s", seconds %/% 60, seconds %% 60, per)
+}
+
+# A distance in meters, shown in the block's unit.
+format_distance <- function(meters, unit = "m") {
+  if (unit == "m") return(paste0(format(round(meters), big.mark = ","), " m"))
+  paste0(formatC(meters / meters_per_unit[[unit]], format = "f", digits = 2), " ", unit)
+}
 
 # Equipment dropdown options (D-014). "Not specified" is stored as blank.
 equipment_options <- c(
@@ -134,6 +212,22 @@ equipment_options <- c(
   "Other"
 )
 
+# Running setting dropdown options (D-020). "Not specified" is stored as blank.
+run_setting_options <- c(
+  "Not specified",
+  "Track",
+  "Outdoor (GPS watch)",
+  "AssaultRunner Pro",
+  "AssaultRunner Elite",
+  "TrueForm Runner",
+  "Woodway Curve",
+  "Other manual treadmill",
+  "Other"
+)
+
+# The dropdown options for each sport's equipment column.
+equipment_choices <- list(Ergometer = equipment_options, Running = run_setting_options)
+
 history_required_cols <- c(
   "athlete_name", "test_date", "power_45s", "power_3min", "power_6min",
   "power_10min", "power_20min"
@@ -156,18 +250,28 @@ empty_history <- function() {
   tibble(
     athlete_name = character(),
     test_date = as.Date(character()),
+    sport = character(),
     power_45s = numeric(),
     power_3min = numeric(),
     power_6min = numeric(),
     power_10min = numeric(),
     power_20min = numeric(),
+    distance_45s_m = numeric(),
+    distance_3min_m = numeric(),
+    distance_6min_m = numeric(),
+    distance_10min_m = numeric(),
+    distance_20min_m = numeric(),
+    distance_unit = character(),
     notes = character(),
     ergometer_type = character(),
+    run_setting = character(),
     protocol_confirmed = logical(),
     test_validity_flag = character(),
     context_flags = character(),
     estimated_cp = numeric(),
     estimated_w_prime = numeric(),
+    estimated_cs_m_per_s = numeric(),
+    estimated_d_prime_m = numeric(),
     power_law_a = numeric(),
     power_law_b = numeric(),
     predicted_power_1min = numeric(),
@@ -178,6 +282,14 @@ empty_history <- function() {
     predicted_power_15min = numeric(),
     predicted_power_30min = numeric(),
     predicted_power_60min = numeric(),
+    predicted_speed_1min_m_per_s = numeric(),
+    predicted_speed_2min_m_per_s = numeric(),
+    predicted_speed_4min_m_per_s = numeric(),
+    predicted_speed_8min_m_per_s = numeric(),
+    predicted_speed_12min_m_per_s = numeric(),
+    predicted_speed_15min_m_per_s = numeric(),
+    predicted_speed_30min_m_per_s = numeric(),
+    predicted_speed_60min_m_per_s = numeric(),
     warning_flags = character(),
     confidence_summary = character(),
     retest_level = character()
@@ -202,20 +314,49 @@ build_example_upload_csv <- function() {
   )
 }
 
+# Text and number inputs, with a default when the input is missing or empty.
+input_text <- function(x, default = "") {
+  if (length(x) == 0 || is.na(x[1])) default else trimws(as.character(x[1]))
+}
+
+input_number <- function(x) {
+  x <- suppressWarnings(as.numeric(x))
+  if (length(x) == 0) NA_real_ else x[1]
+}
+
 build_test_dataframe <- function(input_list) {
+  sport <- input_text(input_list$sport, "Ergometer")
+  running <- sport == "Running"
+  unit <- input_text(input_list$distance_unit, "m")
+
+  # Each block keeps only its own sport's results. Running distances are
+  # entered in the chosen unit and stored in meters (spec section 3).
+  watts <- function(x) if (running) NA_real_ else input_number(x)
+  meters <- function(x) if (running) round(input_number(x) * meters_per_unit[[unit]], 2) else NA_real_
+
+  # "Not specified" in either dropdown is stored as blank (D-014).
+  dropdown <- function(x) if (identical(x, "Not specified")) "" else input_text(x)
+
   tibble(
     athlete_name = trimws(as.character(input_list$athlete_name)),
     # An emptied date field arrives as a zero-length value. Convert it to NA
     # so the row stays intact and validation can report the missing date.
     test_date = if (length(input_list$test_date) == 0) as.Date(NA) else as.Date(input_list$test_date),
-    power_45s = suppressWarnings(as.numeric(input_list$power_45s)),
-    power_3min = suppressWarnings(as.numeric(input_list$power_3min)),
-    power_6min = suppressWarnings(as.numeric(input_list$power_6min)),
-    power_10min = suppressWarnings(as.numeric(input_list$power_10min)),
-    power_20min = suppressWarnings(as.numeric(input_list$power_20min)),
+    sport = sport,
+    power_45s = watts(input_list$power_45s),
+    power_3min = watts(input_list$power_3min),
+    power_6min = watts(input_list$power_6min),
+    power_10min = watts(input_list$power_10min),
+    power_20min = watts(input_list$power_20min),
+    distance_45s_m = meters(input_list$distance_45s),
+    distance_3min_m = meters(input_list$distance_3min),
+    distance_6min_m = meters(input_list$distance_6min),
+    distance_10min_m = meters(input_list$distance_10min),
+    distance_20min_m = meters(input_list$distance_20min),
+    distance_unit = if (running) unit else "",
     notes = trimws(as.character(input_list$notes)),
-    # "Not specified" in the dropdown is stored as blank (D-014).
-    ergometer_type = if (identical(input_list$ergometer_type, "Not specified")) "" else trimws(as.character(input_list$ergometer_type)),
+    ergometer_type = if (running) "" else dropdown(input_list$ergometer_type),
+    run_setting = if (running) dropdown(input_list$run_setting) else "",
     protocol_confirmed = isTRUE(input_list$protocol_confirmed),
     test_validity_flag = as.character(input_list$test_validity_flag),
     # Checked context flags, stored as one field separated by "; " (D-008).
@@ -691,11 +832,12 @@ build_summary_table <- function(test_row, model_fit, cp_metrics, validation_resu
   )
 }
 
-build_prediction_table <- function(model_fit) {
+# digits: 0 for watts, 3 for running speeds in m/s (sport settings).
+build_prediction_table <- function(model_fit, digits = 0) {
   predict_power_curve(model_fit, prediction_durations) %>%
     transmute(
       duration = duration_label,
-      predicted_power_w = round(predicted_power_w, 0),
+      predicted_power_w = round(predicted_power_w, digits),
       # Durations past the 20 min test are extrapolations, not interpolations.
       estimate_type = if_else(
         duration_sec > max(test_durations),
@@ -766,38 +908,66 @@ build_training_targets <- function(pred_table, cp_metrics) {
 
 # Build one saved-history record. Raw values are always kept. When model
 # outputs are withheld (D-009), the model arguments are left out and every
-# model-derived field is empty (NA).
+# model-derived field is empty (NA). Each record fills only its own sport's
+# result and model columns (D-022).
 make_profile_record <- function(test_row, validation_result, model_fit = NULL,
                                 cp_metrics = NULL, pred_table = NULL) {
+  sport <- sport_of(test_row[["sport"]])
+  running <- sport == "Running"
+
   predicted_at <- function(label) {
     if (is.null(pred_table)) NA_real_ else pred_table$predicted_power_w[pred_table$duration == label]
+  }
+  ergometer_only <- function(x) if (running) NA_real_ else x
+  running_only <- function(x) if (running) x else NA_real_
+  value_or <- function(col, default) {
+    x <- test_row[[col]]
+    if (length(x) == 0) default else x
   }
 
   tibble(
     athlete_name = test_row$athlete_name,
     test_date = as.Date(test_row$test_date),
-    power_45s = test_row$power_45s,
-    power_3min = test_row$power_3min,
-    power_6min = test_row$power_6min,
-    power_10min = test_row$power_10min,
-    power_20min = test_row$power_20min,
+    sport = sport,
+    power_45s = ergometer_only(value_or("power_45s", NA_real_)),
+    power_3min = ergometer_only(value_or("power_3min", NA_real_)),
+    power_6min = ergometer_only(value_or("power_6min", NA_real_)),
+    power_10min = ergometer_only(value_or("power_10min", NA_real_)),
+    power_20min = ergometer_only(value_or("power_20min", NA_real_)),
+    distance_45s_m = running_only(value_or("distance_45s_m", NA_real_)),
+    distance_3min_m = running_only(value_or("distance_3min_m", NA_real_)),
+    distance_6min_m = running_only(value_or("distance_6min_m", NA_real_)),
+    distance_10min_m = running_only(value_or("distance_10min_m", NA_real_)),
+    distance_20min_m = running_only(value_or("distance_20min_m", NA_real_)),
+    distance_unit = if (running) distance_unit_of(test_row) else "",
     notes = test_row$notes,
-    ergometer_type = test_row$ergometer_type,
+    ergometer_type = if (running) "" else value_or("ergometer_type", ""),
+    run_setting = if (running) value_or("run_setting", "") else "",
     protocol_confirmed = test_row$protocol_confirmed,
     test_validity_flag = test_row$test_validity_flag,
     context_flags = test_row$context_flags,
-    estimated_cp = if (is.null(cp_metrics)) NA_real_ else cp_metrics$cp_w,
-    estimated_w_prime = if (is.null(cp_metrics)) NA_real_ else cp_metrics$wprime_j,
+    estimated_cp = if (is.null(cp_metrics)) NA_real_ else ergometer_only(cp_metrics$cp_w),
+    estimated_w_prime = if (is.null(cp_metrics)) NA_real_ else ergometer_only(cp_metrics$wprime_j),
+    estimated_cs_m_per_s = if (is.null(cp_metrics)) NA_real_ else running_only(cp_metrics$cp_w),
+    estimated_d_prime_m = if (is.null(cp_metrics)) NA_real_ else running_only(cp_metrics$wprime_j),
     power_law_a = if (is.null(model_fit)) NA_real_ else model_fit$a,
     power_law_b = if (is.null(model_fit)) NA_real_ else model_fit$b,
-    predicted_power_1min = predicted_at("1 min"),
-    predicted_power_2min = predicted_at("2 min"),
-    predicted_power_4min = predicted_at("4 min"),
-    predicted_power_8min = predicted_at("8 min"),
-    predicted_power_12min = predicted_at("12 min"),
-    predicted_power_15min = predicted_at("15 min"),
-    predicted_power_30min = predicted_at("30 min"),
-    predicted_power_60min = predicted_at("60 min"),
+    predicted_power_1min = ergometer_only(predicted_at("1 min")),
+    predicted_power_2min = ergometer_only(predicted_at("2 min")),
+    predicted_power_4min = ergometer_only(predicted_at("4 min")),
+    predicted_power_8min = ergometer_only(predicted_at("8 min")),
+    predicted_power_12min = ergometer_only(predicted_at("12 min")),
+    predicted_power_15min = ergometer_only(predicted_at("15 min")),
+    predicted_power_30min = ergometer_only(predicted_at("30 min")),
+    predicted_power_60min = ergometer_only(predicted_at("60 min")),
+    predicted_speed_1min_m_per_s = running_only(predicted_at("1 min")),
+    predicted_speed_2min_m_per_s = running_only(predicted_at("2 min")),
+    predicted_speed_4min_m_per_s = running_only(predicted_at("4 min")),
+    predicted_speed_8min_m_per_s = running_only(predicted_at("8 min")),
+    predicted_speed_12min_m_per_s = running_only(predicted_at("12 min")),
+    predicted_speed_15min_m_per_s = running_only(predicted_at("15 min")),
+    predicted_speed_30min_m_per_s = running_only(predicted_at("30 min")),
+    predicted_speed_60min_m_per_s = running_only(predicted_at("60 min")),
     warning_flags = paste(validation_result$flags, collapse = "; "),
     confidence_summary = validation_result$confidence_summary,
     retest_level = validation_result$retest_level
@@ -805,19 +975,35 @@ make_profile_record <- function(test_row, validation_result, model_fit = NULL,
 }
 
 recompute_history_record <- function(row, history_df = empty_history()) {
+  # Columns missing from older files fall back to their defaults.
+  text_or <- function(col, default) {
+    if (col %in% names(row) && !is.na(row[[col]])) as.character(row[[col]]) else default
+  }
+  number_or_na <- function(col) {
+    if (col %in% names(row)) as.numeric(row[[col]]) else NA_real_
+  }
+
   test_row <- tibble(
     athlete_name = as.character(row$athlete_name),
     test_date = as.Date(row$test_date),
-    power_45s = as.numeric(row$power_45s),
-    power_3min = as.numeric(row$power_3min),
-    power_6min = as.numeric(row$power_6min),
-    power_10min = as.numeric(row$power_10min),
-    power_20min = as.numeric(row$power_20min),
-    notes = if ("notes" %in% names(row)) as.character(row$notes) else "",
-    ergometer_type = if ("ergometer_type" %in% names(row)) as.character(row$ergometer_type) else "",
+    sport = sport_of(text_or("sport", "")),
+    power_45s = number_or_na("power_45s"),
+    power_3min = number_or_na("power_3min"),
+    power_6min = number_or_na("power_6min"),
+    power_10min = number_or_na("power_10min"),
+    power_20min = number_or_na("power_20min"),
+    distance_45s_m = number_or_na("distance_45s_m"),
+    distance_3min_m = number_or_na("distance_3min_m"),
+    distance_6min_m = number_or_na("distance_6min_m"),
+    distance_10min_m = number_or_na("distance_10min_m"),
+    distance_20min_m = number_or_na("distance_20min_m"),
+    distance_unit = text_or("distance_unit", ""),
+    notes = text_or("notes", ""),
+    ergometer_type = text_or("ergometer_type", ""),
+    run_setting = text_or("run_setting", ""),
     protocol_confirmed = if ("protocol_confirmed" %in% names(row)) as.logical(row$protocol_confirmed) else FALSE,
-    test_validity_flag = if ("test_validity_flag" %in% names(row)) as.character(row$test_validity_flag) else "Complete",
-    context_flags = if ("context_flags" %in% names(row) && !is.na(row$context_flags)) as.character(row$context_flags) else ""
+    test_validity_flag = text_or("test_validity_flag", "Complete"),
+    context_flags = text_or("context_flags", "")
   )
 
   validation_result <- validate_test_values(test_row, history_df)
@@ -830,7 +1016,7 @@ recompute_history_record <- function(row, history_df = empty_history()) {
   profile_long <- to_long_profile(test_row)
   model_fit <- fit_power_duration_model(profile_long)
   cp_metrics <- estimate_secondary_metrics(profile_long)
-  pred_table <- build_prediction_table(model_fit)
+  pred_table <- build_prediction_table(model_fit, settings_for(test_row)$rate_digits)
 
   make_profile_record(
     test_row = test_row,
