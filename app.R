@@ -184,6 +184,13 @@ format_pace <- function(speed, unit = "m") {
   sprintf("%d:%02d /%s", seconds %/% 60, seconds %% 60, per)
 }
 
+# Convert a distance from one unit to another, such as km to mi. Used when
+# the user switches units after entering distances, so each distance stays
+# the same and only its unit changes.
+convert_distance <- function(x, from, to) {
+  round(x * meters_per_unit[[from]] / meters_per_unit[[to]], if (to == "m") 0 else 4)
+}
+
 # A distance in meters, shown in the block's unit.
 format_distance <- function(meters, unit = "m") {
   if (unit == "m") return(paste0(format(round(meters), big.mark = ","), " m"))
@@ -1838,11 +1845,26 @@ server <- function(input, output, session) {
     ))
   })
 
+  # The unit the distance boxes currently show.
+  shown_unit <- reactiveVal("m")
+
   # Distance labels show the chosen unit, such as "45 s distance (km)".
+  # Switching units converts any entered distances, so 5 km becomes 3.1069 mi
+  # instead of 5 mi.
   observeEvent(input$distance_unit, {
+    from <- shown_unit()
+    to <- input$distance_unit
     for (label in names(distance_input_ids)) {
-      updateNumericInput(session, distance_input_ids[[label]], label = paste0(label, " distance (", input$distance_unit, ")"))
+      id <- distance_input_ids[[label]]
+      value <- input_number(input[[id]])
+      new_label <- paste0(label, " distance (", to, ")")
+      if (from != to && !is.na(value)) {
+        updateNumericInput(session, id, label = new_label, value = convert_distance(value, from, to))
+      } else {
+        updateNumericInput(session, id, label = new_label)
+      }
     }
+    shown_unit(to)
   })
 
   current_validation <- reactive({
@@ -2311,6 +2333,9 @@ server <- function(input, output, session) {
     updateDateInput(session, "test_date", value = record$test_date)
     updateSelectInput(session, "ergometer_type", selected = match_equipment(record$ergometer_type))
     updateSelectInput(session, "run_setting", selected = match_equipment(record$run_setting, "Running"))
+    # The loaded distances are already in the record's unit, so switching
+    # the unit box to it shouldn't convert them again.
+    shown_unit(unit)
     updateRadioButtons(session, "distance_unit", selected = unit)
     updateTextAreaInput(session, "notes", value = text_or_blank(record$notes))
     updateCheckboxInput(session, "protocol_confirmed", value = isTRUE(record$protocol_confirmed))
@@ -2337,7 +2362,7 @@ server <- function(input, output, session) {
     save_status_message(paste0(
       "Loaded the saved test for ", record$athlete_name,
       " (", format(record$test_date), "). Edit the values, then save to replace it. ",
-      "Changing the name or start date saves a separate record instead."
+      "Changing the name, start date, or sport saves a separate record instead."
     ))
   })
   

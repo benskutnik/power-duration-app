@@ -246,6 +246,9 @@ run_entry <- function(d, name = "Sam", date = "2026-03-02", setting = "", unit =
 run_typical <- c(270, 870, 1610, 2580, 4990)
 speed_10min <- run_typical[4] / 600
 
+check("Switching units converts distances: 5 km is 3.1069 mi, and 0.27 km is 270 m",
+      convert_distance(5, "km", "mi") == 3.1069 && convert_distance(0.27, "km", "m") == 270)
+
 check("Pace: 4.0 m/s is 4:10 /km, and 8:00 /mi converts correctly",
       format_pace(4.0) == "4:10 /km" && format_pace(1609.344 / 480, "mi") == "8:00 /mi")
 

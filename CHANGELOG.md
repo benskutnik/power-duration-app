@@ -13,6 +13,7 @@ User-facing changes to the Power-Duration App.
 - For running, Historical comparison shows the change in seconds per km or mile and as a percentage. A negative change means faster.
 - Historical trends has a Sport choice under Athlete, so each chart shows one sport.
 - The Testing protocol has running sections: warm-up, safety for the 45 s test, pacing, conditions, and how to measure distance on a track, with a GPS watch, or on a manual treadmill.
+- Switching the distance unit converts any distances already entered, so 5 km becomes 3.1069 mi.
 
 ### Changed
 
