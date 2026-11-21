@@ -385,6 +385,11 @@ check("History table: watts for ergometer rows, pace for running rows",
       grepl(" W$", shown$`20 min`[shown$Sport == "Ergometer"][1]) &&
         all(grepl(" /(km|mi)$", shown$`20 min`[shown$Sport == "Running"])))
 
+page_text <- as.character(ui)
+check("Protocol and Import / export pages cover running",
+      grepl("Measuring running distance", page_text) && grepl("auto-pause", page_text) &&
+        grepl("distance_20min_m", page_text))
+
 # ------------------------------
 # Server logic
 # ------------------------------

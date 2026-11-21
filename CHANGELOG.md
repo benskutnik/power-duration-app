@@ -12,6 +12,7 @@ User-facing changes to the Power-Duration App.
 - Running results show as pace on the profile chart, the summary, training targets, and the predicted-results table. The chart plots speed with its axis labeled in pace, so faster results sit at the top. The summary shows estimated critical speed (CS) as pace and D′ in meters.
 - For running, Historical comparison shows the change in seconds per km or mile and as a percentage. A negative change means faster.
 - Historical trends has a Sport choice under Athlete, so each chart shows one sport.
+- The Testing protocol has running sections: warm-up, safety for the 45 s test, pacing, conditions, and how to measure distance on a track, with a GPS watch, or on a manual treadmill.
 
 ### Changed
 
@@ -19,6 +20,8 @@ User-facing changes to the Power-Duration App.
 - Running and ergometer blocks are compared only with earlier blocks of the same sport.
 - The saved test history table has a Sport column. Ergometer results show in watts and running results as pace.
 - The predicted-results table on Training targets shows each value with its unit, such as "352 W".
+- Import / export lists the columns for ergometer and running rows. Each athlete, start date, and sport can appear once in a file.
+- Notes on Current test entry, Historical comparison, and Training targets cover both sports. "Predicted power by duration" is now "Predicted results by duration".
 
 ## 1.2.1 (2026-10-31)
 
