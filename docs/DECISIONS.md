@@ -262,3 +262,57 @@ The app adds running as a second sport. `docs/running_mode_spec.md` holds the fu
 **Motorized treadmills are not supported:** a maximal effort on one means changing belt speed mid-effort, so the result reflects the speed setting more than the runner.
 
 **Widens:** `01_project_definition_memo.md`, which defines the app as an ergometer tool. The profile key (D-013) and baseline (D-010) will gain sport. Those changes are recorded when built.
+
+## D-021: Running validation thresholds
+
+**Date:** 2026-11-21 | **Status:** Decided; Review scheduled
+
+Running checks compare average speed (distance ÷ time) and show pace in their messages.
+
+| Check | Rule | Result |
+| ----- | ----- | ----- |
+| Unit check | 20 min distance below 1,000 m or above 8,000 m | Hard input error |
+| Suspected entry error | Speed ratio (shorter ÷ longer) above 2.0 for 45 s ÷ 3 min, or above 1.5 for any other adjacent pair | Outputs withheld |
+| Large reversal | A longer test more than 2% faster than the test before it | Outputs withheld |
+| Small reversal | A longer test as fast as, or up to 2% faster than, the test before it | Keep, but interpret cautiously |
+| Steep decline | Speed drops more than 35% (45 s to 3 min), 15% (3 to 6 min), or 12% (6 to 10 min and 10 to 20 min) | Retest suggested |
+| Curve shape | 3, 6, or 10 min speed more than 4% from a quadratic fit (D-007 method) | Retest suggested |
+| Historical mismatch | 3, 6, 10, or 20 min speed more than 8% from the baseline | Retest suggested |
+
+Large reversals and suspected entry errors are pattern blocks (D-006): raw values save only as a compromised record, and uploaded rows import as compromised.
+
+Running adds 3 context flags, each at Retest suggested: Wind, Heat or humidity, and Hills or uneven ground.
+
+The near-flat check is not used for running. D′ displays rounded to the nearest 10 m.
+
+**Simulation method:** 20,000 profiles from the 3-parameter critical-speed model (CS 3.0 to 5.5 m/s, D′ 100 to 350 m, maximum speed 1.4 to 2.3 times CS), in 3 scenarios: 1% day-to-day variation, 1% plus a 10 m GPS distance error, and 2% variation. The variation levels are assumptions. The simulation script is kept outside the repo.
+
+**How often each rule fires on honest blocks:**
+
+| Rule | Track, 1% | GPS, 1% + 10 m | 2% |
+| ----- | ----- | ----- | ----- |
+| Small or large reversal | 3.2% | 4.2% | 22.5% |
+| Large reversal (withheld) | 0.1% | 0.2% | 5.9% |
+| Steep decline | 0.0% | 0.0% | 0.8% |
+| Curve shape | 0.0% | 0.1% | 3.6% |
+| Historical mismatch | 0.0% | 0.0% | 2.2% |
+| Suspected entry error | 0.0% | 0.0% | 0.0% |
+| Near-flat, 1% (not used) | 9.0% | 9.9% | 15.8% |
+
+**Why:**
+
+- The reversal, curve-shape, historical, and unit limits from the spec hold up. Honest 20 min distances ran 3.7 to 6.9 km.
+- **Entry-error limits:** the highest honest speed ratios were 1.51 (45 s ÷ 3 min, GPS) and 1.23 (other pairs). A dropped or extra digit gives a ratio of 10 or more, or a reversal.
+- **Steep-decline checks:** curve shape checks only the 3 interior tests, so it caught a 20 min result 10% low only 11% to 29% of the time. The steep check caught it 66% to 76% of the time.
+- **No near-flat check:** speed falls only about 3.4% from 10 to 20 min, so a 1% rule fires on about 1 in 10 honest blocks. The reversal checks cover the worst case.
+
+**Known gaps:**
+
+- A 45 s result 10% low is caught 6% to 30% of the time. It affects the curve and the short training targets, not CS or D′.
+- A 5% error at 3, 6, or 10 min is caught 16% to 32% of the time.
+- D′ estimates carry an error of about 43 to 59 m (1 standard deviation).
+- A block entered entirely in the wrong unit, such as miles saved as km, passes every single-block check. Only the historical check catches it.
+
+**Review plan:** same trigger and target as D-007: at least 30 real running blocks, and no soft warning firing on more than 10% of good blocks. Day-to-day variation is the main unknown. If it's closer to 2% than 1%, the small-reversal warning fires on about 1 in 5 good blocks and needs loosening.
+
+**Replaces:** the validation summary in `docs/running_mode_spec.md` section 5, where they differ.
