@@ -32,18 +32,11 @@ test_durations <- c(
   "20 min" = 1200
 )
 
-# The column holding each test result, in the same order as test_durations.
-result_columns <- c(
-  "45 s" = "power_45s",
-  "3 min" = "power_3min",
-  "6 min" = "power_6min",
-  "10 min" = "power_10min",
-  "20 min" = "power_20min"
-)
-
-# The 5 results from one record, in test order, as plain numbers.
+# The 5 results from one record, in test order, as plain numbers. The
+# columns that hold them depend on the record's sport.
 test_values <- function(row) {
-  vapply(result_columns, function(col) as.numeric(row[[col]][1]), numeric(1), USE.NAMES = FALSE)
+  columns <- settings_for(row)$result_columns
+  vapply(columns, function(col) as.numeric(row[[col]][1]), numeric(1), USE.NAMES = FALSE)
 }
 
 prediction_durations <- c(
@@ -77,13 +70,34 @@ confidence_sentences <- c(
   "Model outputs are withheld for this testing block. Correct the entry or complete a replacement block for a normal profile."
 )
 
-max_20min_power_w <- 600                        # D-006: above this, likely not watts
-outlier_ratio_limits <- c(3.0, 2.0, 2.0, 2.0)   # D-005: shorter / longer, per adjacent pair
-near_flat_decline <- 0.01                       # D-007: adjacent decline at or below 1%
-steep_ratio_45s_3min <- 2.0                     # D-007: 45 s / 3 min above this (up to 3.0)
-steep_decline_limits <- c(NA, 0.25, 0.20, 0.20) # D-007: 3-6, 6-10, 10-20 min declines
-curve_shape_limit <- 0.04                       # D-007: interior points vs quadratic fit
-history_mismatch_limit <- 0.08                  # D-007: any duration vs baseline record
+# Settings for each sport. A testing block's result columns and validation
+# limits come from its sport's entry. Running is added later (D-020, D-021).
+sport_settings <- list(
+  Ergometer = list(
+    result_columns = c(
+      "45 s" = "power_45s",
+      "3 min" = "power_3min",
+      "6 min" = "power_6min",
+      "10 min" = "power_10min",
+      "20 min" = "power_20min"
+    ),
+    max_20min_value = 600,                          # D-006: above this, likely not watts
+    outlier_ratio_limits = c(3.0, 2.0, 2.0, 2.0),   # D-005: shorter / longer, per adjacent pair
+    near_flat_decline = 0.01,                       # D-007: adjacent decline at or below 1%
+    steep_ratio_45s_3min = 2.0,                     # D-007: 45 s / 3 min above this (up to 3.0)
+    steep_decline_limits = c(NA, 0.25, 0.20, 0.20), # D-007: 3-6, 6-10, 10-20 min declines
+    curve_shape_limit = 0.04,                       # D-007: interior points vs quadratic fit
+    history_mismatch_limit = 0.08                   # D-007: any duration vs baseline record
+  )
+)
+
+# The settings for one record. A record without a sport is an ergometer
+# test, which covers every history file saved before running was added.
+settings_for <- function(row) {
+  sport <- if ("sport" %in% names(row)) as.character(row$sport[1]) else NA_character_
+  if (is.na(sport) || sport == "") sport <- "Ergometer"
+  sport_settings[[sport]]
+}
 
 # Context flags and their retest levels (D-008):
 # 1 = Keep, but interpret cautiously; 2 = Retest suggested; 3 = Retest recommended.
@@ -403,6 +417,16 @@ results_incomplete <- function(test_row) {
 validate_test_values <- function(test_row, history_df = NULL) {
   watts <- test_values(test_row)
   duration_names <- names(test_durations)
+
+  # Limits for this record's sport (D-005 to D-007).
+  s <- settings_for(test_row)
+  max_20min_power_w <- s$max_20min_value
+  outlier_ratio_limits <- s$outlier_ratio_limits
+  near_flat_decline <- s$near_flat_decline
+  steep_ratio_45s_3min <- s$steep_ratio_45s_3min
+  steep_decline_limits <- s$steep_decline_limits
+  curve_shape_limit <- s$curve_shape_limit
+  history_mismatch_limit <- s$history_mismatch_limit
 
   errors <- character()
   withheld_reasons <- character()
