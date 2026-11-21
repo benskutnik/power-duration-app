@@ -243,3 +243,22 @@ The app uses the Ben Skutnik brand colors: black (#111111) on white, grays for s
 **Review:** CP is a secondary metric (non-negotiables memo). If feedback shows the orange CP line pulls attention away from the tested results, switch it to a gray dashed line and use orange elsewhere.
 
 **Replaces:** the blue-and-orange chart colors discussed for 1.2.0, which weren't built.
+
+## D-020: Running mode
+
+**Date:** 2026-10-31 (recorded 2026-11-21) | **Status:** Decided
+
+The app adds running as a second sport. `docs/running_mode_spec.md` holds the full design. Scope:
+
+- Runners do the same 5 fixed-time tests (45 s, 3, 6, 10, 20 min) on the same suggested 11-day cadence, and enter the distance covered.
+- The athlete picks a sport for each testing block. Ergometer stays the default. Each block has one sport.
+- Runners can test on a track, outdoors with a GPS watch, or on a manual treadmill.
+- All model math uses speed in m/s, and the app displays pace. Running reports critical speed (CS) and D′ where ergometer tests report CP and W′.
+- The app does not collect body mass or convert running results to watts.
+- Running ships as 1.3.0, and existing history files keep working.
+
+**Why:** users asked for running. Fixed-time tests keep the app's 5-duration structure and match the developer's training program. Speed comes straight from distance and time. Running power estimates depend on body mass and on each device's model, so converting to watts would add error, and the ratios between durations would stay the same.
+
+**Motorized treadmills are not supported:** a maximal effort on one means changing belt speed mid-effort, so the result reflects the speed setting more than the runner.
+
+**Widens:** `01_project_definition_memo.md`, which defines the app as an ergometer tool. The profile key (D-013) and baseline (D-010) will gain sport. Those changes are recorded when built.
