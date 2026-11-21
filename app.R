@@ -32,6 +32,20 @@ test_durations <- c(
   "20 min" = 1200
 )
 
+# The column holding each test result, in the same order as test_durations.
+result_columns <- c(
+  "45 s" = "power_45s",
+  "3 min" = "power_3min",
+  "6 min" = "power_6min",
+  "10 min" = "power_10min",
+  "20 min" = "power_20min"
+)
+
+# The 5 results from one record, in test order, as plain numbers.
+test_values <- function(row) {
+  vapply(result_columns, function(col) as.numeric(row[[col]][1]), numeric(1), USE.NAMES = FALSE)
+}
+
 prediction_durations <- c(
   "1 min" = 60,
   "2 min" = 120,
@@ -369,13 +383,7 @@ to_long_profile <- function(test_row) {
   tibble(
     duration_label = factor(names(test_durations), levels = names(test_durations)),
     duration_sec = unname(test_durations),
-    power_w = c(
-      test_row$power_45s,
-      test_row$power_3min,
-      test_row$power_6min,
-      test_row$power_10min,
-      test_row$power_20min
-    )
+    power_w = test_values(test_row)
   )
 }
 
@@ -383,10 +391,7 @@ to_long_profile <- function(test_row) {
 # Current test entry already lists what's missing, so the input checks wait
 # until the user has finished entering results.
 results_incomplete <- function(test_row) {
-  any(is.na(c(
-    test_row$power_45s, test_row$power_3min, test_row$power_6min,
-    test_row$power_10min, test_row$power_20min
-  )))
+  any(is.na(test_values(test_row)))
 }
 
 # Check a test entry in 3 layers (see docs/DECISIONS.md, D-005 to D-010):
@@ -396,10 +401,7 @@ results_incomplete <- function(test_row) {
 #    saved as a compromised record.
 # 3. Soft warnings allow outputs but raise the retest level.
 validate_test_values <- function(test_row, history_df = NULL) {
-  watts <- c(
-    test_row$power_45s, test_row$power_3min, test_row$power_6min,
-    test_row$power_10min, test_row$power_20min
-  )
+  watts <- test_values(test_row)
   duration_names <- names(test_durations)
 
   errors <- character()
@@ -553,10 +555,7 @@ validate_test_values <- function(test_row, history_df = NULL) {
     }
     baseline <- baseline_info$baseline
     if (!is.null(baseline)) {
-      baseline_watts <- c(
-        baseline$power_45s, baseline$power_3min, baseline$power_6min,
-        baseline$power_10min, baseline$power_20min
-      )
+      baseline_watts <- test_values(baseline)
       if (any(abs(watts / baseline_watts - 1) > history_mismatch_limit, na.rm = TRUE)) {
         add_warning(paste0(
           "At least one result differs by more than ", history_mismatch_limit * 100,
@@ -1039,8 +1038,8 @@ build_comparison_table <- function(current_row, history_df) {
     )))
   }
 
-  current_vals <- c(current_row$power_45s, current_row$power_3min, current_row$power_6min, current_row$power_10min, current_row$power_20min)
-  prior_vals <- c(prior$power_45s, prior$power_3min, prior$power_6min, prior$power_10min, prior$power_20min)
+  current_vals <- test_values(current_row)
+  prior_vals <- test_values(prior)
 
   comparison <- tibble(
     Duration = names(test_durations),
@@ -1370,10 +1369,7 @@ server <- function(input, output, session) {
   # user should do next. Shown at the top of Current test entry.
   output$completion_status <- renderUI({
     test_row <- current_inputs()
-    watts <- c(
-      test_row$power_45s, test_row$power_3min, test_row$power_6min,
-      test_row$power_10min, test_row$power_20min
-    )
+    watts <- test_values(test_row)
     n_entered <- sum(!is.na(watts))
     has_name <- !is.na(test_row$athlete_name) && test_row$athlete_name != ""
     has_date <- !is.na(test_row$test_date)
