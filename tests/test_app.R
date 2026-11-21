@@ -349,6 +349,42 @@ check("Running-only flag on an ergometer row: upload rejected", is.character(r) 
 r <- upload(c(paste0(run_header, ",run_setting"), "Sam,2026-03-02,Running,270,870,1610,2580,4990,track"))
 check("Running setting matched ignoring case", is.list(r) && r$history$run_setting == "Track")
 
+# Pace display (build step 8). These entries use km, so pace shows per km.
+run_km <- run_entry(run_typical, unit = "km", setting = "Track")
+run_profile <- to_long_profile(run_km)
+run_fit <- fit_power_duration_model(run_profile)
+run_cs <- estimate_secondary_metrics(run_profile)
+
+check("Rates show as pace for running and watts for ergometers",
+      format_rate(4, run_km) == "4:10 /km" && format_rate(300, entry(typical)) == "300 W" &&
+        rate_axis_title(run_entry(run_typical, unit = "mi")) == "Pace (per mile)")
+
+summary_rows <- build_summary_table(run_km, run_fit, run_cs, validate_test_values(run_km))
+check("Running summary: distances with pace, CS as pace, D' in meters",
+      "20 min distance" %in% summary_rows$metric &&
+        summary_rows$value[summary_rows$metric == "20 min distance"] == "4.99 km (4:00 /km)" &&
+        grepl("/km$", summary_rows$value[summary_rows$metric == "Estimated critical speed"]) &&
+        grepl(" m$", summary_rows$value[startsWith(summary_rows$metric, "Estimated D")]))
+
+targets <- build_training_targets(build_prediction_table(run_fit, 3), run_cs, run_km)
+check("Running training targets show pace", all(grepl("^[0-9]+ min: [0-9]+:[0-9]{2} /km", targets$anchor_1)))
+
+run_older <- recompute_history_record(run_entry(c(265, 860, 1590, 2550, 4930), date = "2026-01-12",
+                                                unit = "km", setting = "Track"))
+comparison <- build_comparison_table(run_km, upsert_history_record(empty_history(), run_older))
+check("Running comparison: change in seconds per km, faster is negative",
+      "Change (s per km)" %in% names(comparison) && all(grepl("^-[0-9]+ s$", comparison$`Change (s per km)`)))
+
+mixed <- upsert_history_record(upsert_history_record(run_history, run_older), recompute_history_record(run_km))
+trend <- prepare_history_trend_data(mixed, "sam", "Running")
+check("Running trends: running blocks only, with estimated CS",
+      !any(trend$test_date == as.Date("2026-01-05")) && "Estimated CS" %in% trend$metric)
+
+shown <- format_history_table(mixed)
+check("History table: watts for ergometer rows, pace for running rows",
+      grepl(" W$", shown$`20 min`[shown$Sport == "Ergometer"][1]) &&
+        all(grepl(" /(km|mi)$", shown$`20 min`[shown$Sport == "Running"])))
+
 # ------------------------------
 # Server logic
 # ------------------------------
@@ -475,7 +511,16 @@ suppressWarnings(testServer(server, {
   session$setInputs(save_test = 6)
   check("Server: running entry saves as a running record",
         nrow(history_data()) == 3 && sum(history_data()$sport == "Running") == 1)
+      
+  check("Server: running predictions keep decimals for pace",
+        any(current_predictions()$predicted_power_w != round(current_predictions()$predicted_power_w)))
 
+  session$setInputs(trend_athlete = "ann", trend_sport = "Running")
+  broken <- broken_outputs(session)
+  area <- paste(unlist(output$history_plot_area), collapse = " ")
+  check("Server: running trends ask for a second running block",
+        length(broken) == 0 && grepl("second testing block in this sport", area), broken)
+      
   session$setInputs(sport = "Ergometer")
   check("Server: running conditions are ignored for ergometer blocks", current_inputs()$context_flags == "")
 }))

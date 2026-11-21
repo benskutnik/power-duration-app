@@ -190,6 +190,49 @@ format_distance <- function(meters, unit = "m") {
   paste0(formatC(meters / meters_per_unit[[unit]], format = "f", digits = 2), " ", unit)
 }
 
+# Rates as users see them: watts for ergometer tests, pace for running.
+# Missing values show as "Not available".
+format_rate <- function(rate, row) {
+  shown <- if (settings_for(row)$speed_based) {
+    format_pace(rate, distance_unit_of(row))
+  } else {
+    paste0(round(rate), " W")
+  }
+  ifelse(is.na(rate), "Not available", shown)
+}
+
+# The chart's y-axis title for a record's sport.
+rate_axis_title <- function(row) {
+  if (!settings_for(row)$speed_based) return("Average power (W)")
+  paste0("Pace (per ", if (identical(distance_unit_of(row), "mi")) "mile" else "km", ")")
+}
+
+# A y-axis for running charts: speed, so faster sits at the top, labeled in
+# pace at round values (spec section 8). Pace gridlines aren't evenly
+# spaced, since pace is the inverse of speed.
+scale_y_pace <- function(speeds, unit = "m") {
+  per_meters <- meters_per_unit[[if (identical(unit, "mi")) "mi" else "km"]]
+  paces <- per_meters / range(speeds, na.rm = TRUE)
+  steps <- c(5, 10, 15, 30, 60, 120, 300)
+  step <- steps[which(diff(rev(paces)) / steps <= 6)[1]]
+  if (is.na(step)) step <- 300
+  pace_breaks <- seq(floor(min(paces) / step) * step, ceiling(max(paces) / step) * step, by = step)
+  scale_y_continuous(
+    breaks = per_meters / pace_breaks,
+    labels = sprintf("%d:%02d", pace_breaks %/% 60, pace_breaks %% 60),
+    expand = expansion(mult = 0.08)
+  )
+}
+
+# The y-axis for a record's sport: watts from zero, or pace.
+rate_y_scale <- function(rates, row) {
+  if (settings_for(row)$speed_based) {
+    scale_y_pace(rates, distance_unit_of(row))
+  } else {
+    scale_y_continuous(limits = c(0, NA), expand = expansion(mult = c(0, 0.08)), labels = label_number())
+  }
+}
+
 # Equipment dropdown options (D-014). "Not specified" is stored as blank.
 equipment_options <- c(
   "Not specified",
@@ -587,9 +630,9 @@ find_baseline <- function(test_row, history_df) {
   )
 }
 
-# The 5 results in long form for modeling and plotting. For running records,
-# power_w holds speed in m/s; the column is renamed when the charts are
-# updated for running (build step 8).
+# The 5 results in long form for modeling and plotting. The power_w column
+# holds each sport's rate: watts for ergometer tests, speed in m/s for
+# running. The model works the same way on both.
 to_long_profile <- function(test_row) {
   tibble(
     duration_label = factor(names(test_durations), levels = names(test_durations)),
@@ -892,30 +935,40 @@ estimate_secondary_metrics <- function(profile_long) {
 }
 
 build_summary_table <- function(test_row, model_fit, cp_metrics, validation_result) {
+  running <- settings_for(test_row)$speed_based
+
+  # Ergometer results in watts; running results as distance and pace (spec section 8).
+  results <- if (running) {
+    unit <- distance_unit_of(test_row)
+    paste0(format_distance(test_values(test_row), unit), " (", format_rate(test_rates(test_row), test_row), ")")
+  } else {
+    format_rate(test_rates(test_row), test_row)
+  }
+  critical <- if (is.na(cp_metrics$cp_w)) "Not available" else format_rate(cp_metrics$cp_w, test_row)
+  reserve <- if (is.na(cp_metrics$wprime_j)) {
+    "Not available"
+  } else if (running) {
+    paste0(round(cp_metrics$wprime_j, -1), " m")       # D-021: nearest 10 m
+  } else {
+    paste0(round(cp_metrics$wprime_j / 1000, 1), " kJ")
+  }
+
   tibble(
     metric = c(
       "Athlete",
       "Block start date",
-      "45 s power",
-      "3 min power",
-      "6 min power",
-      "10 min power",
-      "20 min power",
-      "Estimated critical power",
-      "Estimated W′",
+      paste(names(test_durations), if (running) "distance" else "power"),
+      if (running) "Estimated critical speed" else "Estimated critical power",
+      if (running) "Estimated D′" else "Estimated W′",
       "Confidence summary",
       "Retest guidance"
     ),
     value = c(
       test_row$athlete_name,
       as.character(test_row$test_date),
-      paste0(round(test_row$power_45s, 0), " W"),
-      paste0(round(test_row$power_3min, 0), " W"),
-      paste0(round(test_row$power_6min, 0), " W"),
-      paste0(round(test_row$power_10min, 0), " W"),
-      paste0(round(test_row$power_20min, 0), " W"),
-      ifelse(is.na(cp_metrics$cp_w), "Not available", paste0(round(cp_metrics$cp_w, 0), " W")),
-      ifelse(is.na(cp_metrics$wprime_j), "Not available", paste0(round(cp_metrics$wprime_j / 1000, 1), " kJ")),
+      results,
+      critical,
+      reserve,
       validation_result$confidence_summary,
       validation_result$retest_level
     )
@@ -937,17 +990,20 @@ build_prediction_table <- function(model_fit, digits = 0) {
     )
 }
 
-build_training_targets <- function(pred_table, cp_metrics) {
-  # Look up a predicted power by its duration label, e.g. "4 min".
+build_training_targets <- function(pred_table, cp_metrics, test_row = NULL) {
+  running <- settings_for(test_row)$speed_based
+
+  # Look up a predicted rate by its duration label, e.g. "4 min".
   lookup <- setNames(pred_table$predicted_power_w, pred_table$duration)
 
-  # Show each anchor as its own value, e.g. "4 min: 352 W". Combining two
-  # anchors into one range would hide that they refer to different durations.
-  # Anchors beyond the 20 min test are marked as extrapolated.
+  # Show each anchor as its own value, e.g. "4 min: 352 W" or "4 min:
+  # 4:02 /km". Combining two anchors into one range would hide that they
+  # refer to different durations. Anchors beyond the 20 min test are marked
+  # as extrapolated.
   format_anchor <- function(label) {
     is_extrapolated <- prediction_durations[[label]] > max(test_durations)
     paste0(
-      label, ": ", lookup[[label]], " W",
+      label, ": ", format_rate(lookup[[label]], test_row),
       if (is_extrapolated) " (extrapolated)" else ""
     )
   }
@@ -984,14 +1040,13 @@ build_training_targets <- function(pred_table, cp_metrics) {
     note = c(
       "A starting reference. Adjust to what you can repeat across the session.",
       "Highly fatiguing and pacing-sensitive. Adjust to what you can repeat.",
-      "Choose a power you can hold on every repeat.",
+      if (running) "Choose a pace you can hold on every repeat." else "Choose a power you can hold on every repeat.",
       "An estimated reference for sustained work. It does not identify a physiological threshold.",
       "Both values extend beyond your 20 min test. Treat them as lower-confidence planning references."
     ),
-    cp_context = ifelse(
-      is.na(cp_metrics$cp_w),
-      "Secondary estimated CP not available",
-      paste0("Secondary estimated CP: ", round(cp_metrics$cp_w, 0), " W")
+    cp_context = paste0(
+      "Secondary estimated ", if (running) "CS" else "CP",
+      if (is.na(cp_metrics$cp_w)) " not available" else paste0(": ", format_rate(cp_metrics$cp_w, test_row))
     )
   )
 }
@@ -1342,24 +1397,56 @@ athlete_choices <- function(history_df) {
   setNames(latest$key, latest$athlete_name)
 }
 
-# Trend data for one athlete, chosen by normalized name.
-prepare_history_trend_data <- function(history_df, athlete_key) {
-  history_df <- history_df %>%
-    filter(normalize_athlete_name(athlete_name) == athlete_key)
-  history_df %>%
-    select(test_date, power_45s, power_3min, power_6min, power_10min, power_20min, estimated_cp) %>%
-    pivot_longer(
-      cols = -test_date,
-      names_to = "metric",
-      values_to = "power_w"
-    ) %>%
-    mutate(
-      metric = factor(
-        metric,
-        levels = c("power_45s", "power_3min", "power_6min", "power_10min", "power_20min", "estimated_cp"),
-        labels = c("45 s", "3 min", "6 min", "10 min", "20 min", "Estimated CP")
-      )
+# The sports an athlete has saved blocks for, in the app's order.
+athlete_sports <- function(history_df, athlete_key) {
+  saved <- sport_of(history_df$sport[normalize_athlete_name(history_df$athlete_name) %in% athlete_key])
+  intersect(names(sport_settings), saved)
+}
+
+# Trend data for one athlete and one sport (spec section 8): the 5 results
+# as rates, plus estimated CP or CS.
+prepare_history_trend_data <- function(history_df, athlete_key, trend_sport = "Ergometer") {
+  speed_based <- sport_settings[[trend_sport]]$speed_based
+  critical_column <- if (speed_based) "estimated_cs_m_per_s" else "estimated_cp"
+  critical_label <- if (speed_based) "Estimated CS" else "Estimated CP"
+  levels <- c(names(test_durations), critical_label)
+
+  rows <- history_df %>%
+    filter(normalize_athlete_name(athlete_name) == athlete_key, sport_of(sport) == trend_sport)
+
+  bind_rows(lapply(seq_len(nrow(rows)), function(i) {
+    row <- rows[i, ]
+    tibble(
+      test_date = row$test_date,
+      metric = factor(levels, levels = levels),
+      power_w = c(test_rates(row), row[[critical_column]])
     )
+  }))
+}
+
+# The saved history as shown in the history table: watts or pace, and the
+# sport's estimated CP or CS.
+format_history_table <- function(hist) {
+  shown <- lapply(seq_len(nrow(hist)), function(i) {
+    row <- hist[i, ]
+    critical <- if (settings_for(row)$speed_based) row$estimated_cs_m_per_s else row$estimated_cp
+    c(format_rate(test_rates(row), row), if (is.na(critical)) "" else format_rate(critical, row))
+  })
+  shown <- do.call(rbind, shown)
+
+  tibble(
+    Athlete = hist$athlete_name,
+    Sport = sport_of(hist$sport),
+    `Block start date` = as.character(hist$test_date),
+    `45 s` = shown[, 1],
+    `3 min` = shown[, 2],
+    `6 min` = shown[, 3],
+    `10 min` = shown[, 4],
+    `20 min` = shown[, 5],
+    `Estimated CP or CS` = shown[, 6],
+    `Validity` = hist$test_validity_flag,
+    `Retest guidance` = hist$retest_level
+  )
 }
 
 # Compare the current entry with its baseline: the most recent earlier test
@@ -1375,16 +1462,33 @@ build_comparison_table <- function(current_row, history_df) {
     )))
   }
 
-  current_vals <- test_values(current_row)
-  prior_vals <- test_values(prior)
-
-  comparison <- tibble(
-    Duration = names(test_durations),
-    Current = round(current_vals),
-    Previous = round(prior_vals),
-    `Change (W)` = round(current_vals - prior_vals),
-    `Change (%)` = sprintf("%+.1f%%", 100 * (current_vals / prior_vals - 1))
-  )
+  comparison <- if (settings_for(current_row)$speed_based) {
+    # Running: change in pace, in seconds per km or mile and as a percentage.
+    # Negative means faster (spec section 8).
+    unit <- distance_unit_of(current_row)
+    per <- if (identical(unit, "mi")) "mi" else "km"
+    current_pace <- meters_per_unit[[per]] / test_rates(current_row)
+    prior_pace <- meters_per_unit[[per]] / test_rates(prior)
+    change <- tibble(
+      Duration = names(test_durations),
+      Current = format_pace(test_rates(current_row), unit),
+      Previous = format_pace(test_rates(prior), unit),
+      Change = sprintf("%+d s", as.integer(round(current_pace - prior_pace))),
+      `Change (%)` = sprintf("%+.1f%%", 100 * (current_pace / prior_pace - 1))
+    )
+    names(change)[4] <- paste0("Change (s per ", per, ")")
+    change
+  } else {
+    current_vals <- test_values(current_row)
+    prior_vals <- test_values(prior)
+    tibble(
+      Duration = names(test_durations),
+      Current = round(current_vals),
+      Previous = round(prior_vals),
+      `Change (W)` = round(current_vals - prior_vals),
+      `Change (%)` = sprintf("%+.1f%%", 100 * (current_vals / prior_vals - 1))
+    )
+  }
 
   # Name the previous column by its start date so the comparison is explicit.
   names(comparison)[3] <- paste0("Previous (", format(prior$test_date), ")")
@@ -1621,6 +1725,7 @@ ui <- navbarPage(
       br(),
       h3("Historical trends"),
       selectInput("trend_athlete", "Athlete", choices = character()),
+      radioButtons("trend_sport", "Sport", choices = "Ergometer", inline = TRUE),
       uiOutput("history_plot_area")
     )
   ),
@@ -1745,11 +1850,11 @@ server <- function(input, output, session) {
   })
 
   current_predictions <- reactive({
-    build_prediction_table(current_model_fit())
+    build_prediction_table(current_model_fit(), settings_for(current_inputs())$rate_digits)
   })
 
   current_training_targets <- reactive({
-    build_training_targets(current_predictions(), current_secondary_metrics())
+    build_training_targets(current_predictions(), current_secondary_metrics(), current_inputs())
   })
 
   # Completion status: how many of the 5 results are entered, and what the
@@ -1850,19 +1955,23 @@ server <- function(input, output, session) {
 
     # Outputs withheld: plot the entered values only, with no fitted curve,
     # so the problem is visible without implying a modeled profile.
+    # Watts for ergometer tests; speed labeled in pace for running (D-020).
+    test_row <- current_inputs()
+    running <- settings_for(test_row)$speed_based
+
     if (v$outputs_withheld) {
-      raw_df <- to_long_profile(current_inputs())
+      raw_df <- to_long_profile(test_row)
       return(
         ggplot(raw_df, aes(x = duration_sec, y = power_w)) +
           geom_point(size = 3) +
-          geom_text(aes(label = paste0(round(power_w, 0), " W")), vjust = -1, size = 4) +
+          geom_text(aes(label = format_rate(power_w, test_row)), vjust = -1, size = 4) +
           scale_x_log10(breaks = unname(test_durations), labels = names(test_durations)) +
-          scale_y_continuous(limits = c(0, NA), expand = expansion(mult = c(0, 0.1)), labels = label_number()) +
+          rate_y_scale(raw_df$power_w, test_row) +
           labs(
             title = "Entered results",
             subtitle = "No fitted curve: model outputs are withheld. See the messages above.",
             x = "Duration",
-            y = "Average power (W)"
+            y = rate_axis_title(test_row)
           ) +
           theme_minimal(base_size = 13)
       )
@@ -1878,10 +1987,10 @@ server <- function(input, output, session) {
     curve_tested <- curve_df %>% filter(duration_sec <= longest_test_sec)
     curve_extrapolated <- curve_df %>% filter(duration_sec >= longest_test_sec)
 
-    # Watt labels plus the curve as blank labels, so ggrepel keeps the
+    # Result labels plus the curve as blank labels, so ggrepel keeps the
     # labels off the curve and inside the plot area.
     label_df <- bind_rows(
-      profile_df %>% transmute(duration_sec, y = power_w, label = paste0(round(power_w, 0), " W")),
+      profile_df %>% transmute(duration_sec, y = power_w, label = format_rate(power_w, test_row)),
       curve_df %>% transmute(duration_sec, y = pred_power_w, label = "")
     )
 
@@ -1932,16 +2041,12 @@ server <- function(input, output, session) {
         labels = c("45 s", "3 min", "6 min", "10 min", "20 min", "30 min", "60 min"),
         guide = guide_axis(check.overlap = TRUE)
       ) +
-      scale_y_continuous(
-        limits = c(0, NA),
-        expand = expansion(mult = c(0, 0.08)),
-        labels = label_number()
-      ) +
+      rate_y_scale(c(profile_df$power_w, curve_df$pred_power_w), test_row) +
       labs(
-        title = "Power-duration profile",
+        title = if (running) "Pace-duration profile" else "Power-duration profile",
         subtitle = "Measured test points with a descriptive fitted curve",
         x = "Duration",
-        y = "Average power (W)",
+        y = rate_axis_title(test_row),
         caption = "The curve is a descriptive fit for practical use.\nIt is not a direct physiological measurement."
       ) +
       theme_minimal(base_size = 13) +
@@ -1970,15 +2075,18 @@ server <- function(input, output, session) {
 
   output$prediction_table <- renderTable({
     validate(
-      need(!current_validation()$outputs_withheld, "Resolve the messages above to view predicted powers.")
+      need(!current_validation()$outputs_withheld, "Resolve the messages above to view predicted results.")
     )
-    current_predictions() %>%
-      transmute(
-        Duration = duration,
-        `Estimated power (W)` = predicted_power_w,
-        `Estimate type` = estimate_type
-      )
-  }, striped = TRUE, bordered = TRUE, spacing = "s", digits = 0)
+    test_row <- current_inputs()
+    predictions <- current_predictions()
+    table <- tibble(
+      Duration = predictions$duration,
+      Estimate = format_rate(predictions$predicted_power_w, test_row),
+      `Estimate type` = predictions$estimate_type
+    )
+    names(table)[2] <- if (settings_for(test_row)$speed_based) "Estimated pace" else "Estimated power"
+    table
+  }, striped = TRUE, bordered = TRUE, spacing = "s")
 
   # Holds a record while the user decides whether to replace a saved test
   # with the same athlete and start date.
@@ -2284,19 +2392,7 @@ server <- function(input, output, session) {
     }
 
     datatable(
-      hist %>%
-        transmute(
-          Athlete = athlete_name,
-          `Block start date` = as.character(test_date),
-          `45 s` = power_45s,
-          `3 min` = power_3min,
-          `6 min` = power_6min,
-          `10 min` = power_10min,
-          `20 min` = power_20min,
-          `Estimated CP` = round(estimated_cp, 0),
-          `Validity` = test_validity_flag,
-          `Retest guidance` = retest_level
-        ),
+      format_history_table(hist),
       options = list(pageLength = 8, scrollX = TRUE),
       rownames = FALSE,
       selection = "single"
@@ -2342,16 +2438,31 @@ server <- function(input, output, session) {
     updateSelectInput(session, "trend_athlete", choices = choices, selected = selected)
   })
 
-  # Same for Historical Trends: it needs at least 2 testing blocks.
+  # Trends show one sport at a time (spec section 8). Offer the sports the
+  # chosen athlete has saved, keeping the current choice when possible.
+  observe({
+    sports <- athlete_sports(history_data(), input$trend_athlete)
+    if (length(sports) == 0) sports <- "Ergometer"
+    current <- isolate(input$trend_sport)
+    selected <- if (!is.null(current) && current %in% sports) current else sports[1]
+    updateRadioButtons(session, "trend_sport", choices = sports, selected = selected, inline = TRUE)
+  })
+
+  # The sport chosen for trends, defaulting to Ergometer.
+  trend_sport <- reactive({
+    if (isTRUE(input$trend_sport %in% names(sport_settings))) input$trend_sport else "Ergometer"
+  })
+
+  # Historical Trends needs at least 2 testing blocks in the chosen sport.
   output$history_plot_area <- renderUI({
     hist <- history_data()
     if (nrow(hist) == 0) {
       return(p(class = "text-muted", "No saved history yet."))
     }
     athlete_hist <- hist %>%
-      filter(normalize_athlete_name(athlete_name) %in% input$trend_athlete)
+      filter(normalize_athlete_name(athlete_name) %in% input$trend_athlete, sport_of(sport) == trend_sport())
     if (dplyr::n_distinct(athlete_hist$test_date) < 2) {
-      return(p(class = "text-muted", "Save a second testing block for this athlete to see trends over time."))
+      return(p(class = "text-muted", "Save a second testing block in this sport for this athlete to see trends over time."))
     }
     plotOutput("history_plot", height = "420px")
   })
@@ -2370,6 +2481,8 @@ server <- function(input, output, session) {
 
     baseline_label <- paste0("Previous (", format(baseline$test_date), ")")
     longest_test_sec <- max(test_durations)
+    test_row <- current_inputs()
+    running <- settings_for(test_row)$speed_based
 
     # Previous comes first so the current test draws on top of it.
     test_levels <- c(baseline_label, "Current")
@@ -2399,11 +2512,12 @@ server <- function(input, output, session) {
         labels = names(test_durations),
         guide = guide_axis(check.overlap = TRUE)
       ) +
-      scale_y_continuous(labels = label_number()) +
+      (if (running) scale_y_pace(c(points_df$power_w, curves_df$pred_power_w), distance_unit_of(test_row))
+       else scale_y_continuous(labels = label_number())) +
       labs(
         subtitle = "Fitted curves, 45 s to 20 min",
         x = "Duration",
-        y = "Average power (W)",
+        y = rate_axis_title(test_row),
         color = NULL
       ) +
       theme_minimal(base_size = 13) +
@@ -2418,22 +2532,31 @@ server <- function(input, output, session) {
     )
 
     req(input$trend_athlete)
-    trend_df <- prepare_history_trend_data(hist, input$trend_athlete)
+    sport <- trend_sport()
+    running <- sport_settings[[sport]]$speed_based
+    trend_df <- prepare_history_trend_data(hist, input$trend_athlete, sport)
 
     # A trend needs at least 2 testing blocks.
     validate(
       need(dplyr::n_distinct(trend_df$test_date) > 1, "Save a second testing block to see trends over time.")
     )
 
+    # Running trends use the unit of the athlete's latest running block.
+    latest <- hist %>%
+      filter(normalize_athlete_name(athlete_name) == input$trend_athlete, sport_of(sport) == .env$sport) %>%
+      arrange(desc(test_date)) %>%
+      slice(1)
+
     # One gray per test duration, darkest for 45 s, and orange for
-    # estimated CP, the chart's one orange mark.
+    # estimated CP or CS, the chart's one orange mark.
     trend_colors <- c(
       "45 s" = "#111111",
       "3 min" = "#333333",
       "6 min" = "#555555",
       "10 min" = "#707070",
       "20 min" = "#8A8A8A",
-      "Estimated CP" = "#E4572E"
+      "Estimated CP" = "#E4572E",
+      "Estimated CS" = "#E4572E"
     )
 
     # Label each line at its most recent point instead of using a legend.
@@ -2461,11 +2584,12 @@ server <- function(input, output, session) {
       ) +
       scale_color_manual(values = trend_colors) +
       scale_x_date(expand = expansion(mult = c(0.05, 0.3))) +
-      scale_y_continuous(labels = label_number()) +
+      (if (running) scale_y_pace(trend_df$power_w, distance_unit_of(latest))
+       else scale_y_continuous(labels = label_number())) +
       labs(
-        subtitle = "Test powers and estimated CP",
+        subtitle = if (running) "Test paces and estimated CS" else "Test powers and estimated CP",
         x = "Testing block start date",
-        y = "Average power (W)"
+        y = rate_axis_title(latest)
       ) +
       theme_minimal(base_size = 13) +
       theme(legend.position = "none", plot.title.position = "plot")

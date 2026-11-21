@@ -9,11 +9,16 @@ User-facing changes to the Power-Duration App.
 - Running testing blocks. Choose Running under Sport on the entry form to enter the distance covered in each timed test, in meters, kilometers, or miles, along with where you ran and running conditions such as wind or hills.
 - History CSV files can include running testing blocks: a `sport` column, 5 distance columns in meters, a display unit, and a running setting. Files without a `sport` column upload as ergometer tests, as before.
 - The example CSV includes a running row.
+- Running results show as pace on the profile chart, the summary, training targets, and the predicted-results table. The chart plots speed with its axis labeled in pace, so faster results sit at the top. The summary shows estimated critical speed (CS) as pace and D′ in meters.
+- For running, Historical comparison shows the change in seconds per km or mile and as a percentage. A negative change means faster.
+- Historical trends has a Sport choice under Athlete, so each chart shows one sport.
 
 ### Changed
 
 - The same athlete can have an ergometer block and a running block with the same start date.
 - Running and ergometer blocks are compared only with earlier blocks of the same sport.
+- The saved test history table has a Sport column. Ergometer results show in watts and running results as pace.
+- The predicted-results table on Training targets shows each value with its unit, such as "352 W".
 
 ## 1.2.1 (2026-10-31)
 
