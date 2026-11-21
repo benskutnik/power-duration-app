@@ -2,6 +2,18 @@
 
 User-facing changes to the Power-Duration App.
 
+## Unreleased
+
+### Added
+
+- History CSV files can include running testing blocks: a `sport` column, 5 distance columns in meters, a display unit, and a running setting. Files without a `sport` column upload as ergometer tests, as before.
+- The example CSV includes a running row.
+
+### Changed
+
+- The same athlete can have an ergometer block and a running block with the same start date.
+- Running and ergometer blocks are compared only with earlier blocks of the same sport.
+
 ## 1.2.1 (2026-10-31)
 
 ### Fixed
