@@ -246,7 +246,7 @@ The app uses the Ben Skutnik brand colors: black (#111111) on white, grays for s
 
 ## D-020: Running mode
 
-**Date:** 2026-10-31 (recorded 2026-11-21) | **Status:** Decided
+**Date:** 2026-10-31 (recorded 2026-11-21) | **Status:** Implemented (1.3.0)
 
 The app adds running as a second sport. `docs/running_mode_spec.md` holds the full design. Scope:
 
@@ -261,11 +261,11 @@ The app adds running as a second sport. `docs/running_mode_spec.md` holds the fu
 
 **Motorized treadmills are not supported:** a maximal effort on one means changing belt speed mid-effort, so the result reflects the speed setting more than the runner.
 
-**Widens:** `01_project_definition_memo.md`, which defines the app as an ergometer tool. The profile key (D-013) and baseline (D-010) will gain sport. Those changes are recorded when built.
+**Widens:** `01_project_definition_memo.md`, which defines the app as an ergometer tool. The profile key (D-013) and baseline (D-010) gain sport, as recorded in D-022.
 
 ## D-021: Running validation thresholds
 
-**Date:** 2026-11-21 | **Status:** Decided; Review scheduled
+**Date:** 2026-11-21 | **Status:** Implemented (1.3.0); Review scheduled
 
 Running checks compare average speed (distance ÷ time) and show pace in their messages.
 
@@ -319,7 +319,7 @@ The near-flat check is not used for running. D′ displays rounded to the neares
 
 ## D-022: Running data model
 
-**Date:** 2026-11-21 | **Status:** Implemented (build step 6)
+**Date:** 2026-11-21 | **Status:** Implemented (1.3.0)
 
 Each testing block is still one wide row. New columns:
 
@@ -333,7 +333,7 @@ Each testing block is still one wide row. New columns:
 Derived columns, recomputed on upload: `estimated_cs_m_per_s`, `estimated_d_prime_m`, and `predicted_speed_1min_m_per_s` through `predicted_speed_60min_m_per_s`.
 
 - **One sport per row.** Each record fills only its own sport's result and model columns. On upload, values in the other sport's columns are ignored.
-- **Entry:** distances are entered in the block's unit and stored in meters, rounded to 0.01 m.
+- **Entry:** distances are entered in the block's unit and stored in meters, rounded to 0.01 m. Switching the unit converts any distances already entered, so the distances stay the same.
 - **Profile key:** athlete name, start date, and sport. The same athlete can have an ergometer block and a running block with the same start date.
 - **Baseline:** same athlete and sport, with comparable equipment or setting. "Other" and "Other manual treadmill" are never comparable.
 - **Upload:** every file needs `athlete_name` and `test_date`. Each row needs the 5 result columns for its own sport, so a file of ergometer rows needs only the power columns. The file is rejected for an unrecognized sport, an unrecognized distance unit on a running row, or a running-only context flag on an ergometer row. An unrecognized running setting becomes "Other."

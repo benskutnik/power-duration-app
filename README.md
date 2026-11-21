@@ -1,16 +1,16 @@
 # Power-Duration App
 
-A Shiny app that estimates a practical power-duration profile from 5 maximal field tests on an ergometer.
+A Shiny app that estimates a practical performance profile from 5 maximal field tests: average power on an ergometer, or distance covered when running.
 
 **Use the app:** https://benskutnik-power-duration-app.share.connect.posit.cloud
 
 ## Who it's for
 
-Home-gym athletes and coaches who can read average watts from an ergometer and want a repeatable way to track performance across short and long efforts.
+Home-gym athletes, runners, and coaches who want a repeatable way to track performance across short and long efforts. Ergometer users need a machine that shows average watts. Runners need a track, a GPS watch, or a manual treadmill.
 
 ## The tests
 
-5 maximal average-power efforts, shortest to longest, over about 11 days:
+5 maximal efforts, shortest to longest, over about 11 days. On an ergometer, record the average watts for each. When running, record the distance covered.
 
 | Suggested day | Test |
 | ----- | ----- |
@@ -20,15 +20,15 @@ Home-gym athletes and coaches who can read average watts from an ergometer and w
 | Week 2, Monday | 10 minutes |
 | Week 2, Thursday | 20 minutes |
 
-The weekdays are a suggested cadence. The spacing allows recovery between efforts, and the 20-minute test comes last because it's the most sensitive to pacing and fatigue. The app's Testing Protocol tab covers warm-up, pacing, and when to delay or repeat a test.
+The weekdays are a suggested cadence. The spacing allows recovery between efforts, and the 20-minute test comes last because it's the most sensitive to pacing and fatigue. The app's Testing protocol tab covers warm-up, pacing, measuring running distance, and when to delay or repeat a test. Motorized treadmills aren't supported.
 
 ## What the app shows
 
-- Your 5 tested results and a fitted power-duration curve. Tested points and modeled values are shown separately, and the curve beyond 20 minutes is marked as extrapolated.
-- Estimated critical power (CP) and W′ as secondary, model-derived metrics.
-- Predicted power at 8 fixed durations, from 1 to 60 minutes.
+- Your 5 tested results and a fitted curve, in watts for ergometer tests and as pace for running. Tested points and modeled values are shown separately, and the curve beyond 20 minutes is marked as extrapolated.
+- Estimated critical power (CP) and W′, or critical speed (CS) and D′ for running, as secondary, model-derived metrics.
+- Predicted power or pace at 8 fixed durations, from 1 to 60 minutes.
 - Practical training targets for 5 workout categories, each tied to specific durations.
-- Comparisons with your earlier testing blocks.
+- Comparisons with your earlier testing blocks in the same sport.
 - Data-quality checks that flag entry errors and unusual patterns, with guidance on whether to retest.
 
 ## What it doesn't measure

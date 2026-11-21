@@ -2,7 +2,7 @@
 
 ## Scope and provenance
 
-This bibliography covers the scientific model families used in the app: power-law descriptions of endurance performance and the critical-power model. It was compiled after the original build to document the scientific context for the app's methods. It does not record which papers were consulted during development.
+This bibliography covers the scientific model families used in the app: power-law descriptions of endurance performance, the critical-power model, and its running counterpart, critical speed. It was compiled after the original build to document the scientific context for the app's methods. It does not record which papers were consulted during development.
 
 Titles, journals, years, volume and issue numbers, page ranges or article numbers, and DOIs were checked against publisher records, PubMed, or journal archives where available. Each entry includes a link for direct checking.
 
@@ -63,6 +63,18 @@ M. (2016). Critical power: An important fatigue threshold in exercise
 physiology. *Medicine & Science in Sports & Exercise, 48*(11),
 2320--2334. https://doi.org/10.1249/MSS.0000000000000939
 
+## Critical speed in running
+
+Hughson, R. L., Orok, C. J., & Staudt, L. E. (1984). A high velocity
+treadmill running test to assess endurance running potential.
+*International Journal of Sports Medicine, 5*(1), 23--25.
+https://doi.org/10.1055/s-2008-1025875
+
+Smyth, B., & Muniz-Pumares, D. (2020). Calculation of critical speed
+from raw training data in recreational marathon runners. *Medicine &
+Science in Sports & Exercise, 52*(12), 2637--2645.
+https://doi.org/10.1249/MSS.0000000000002412
+
 ## How these sources relate to the app
 
 The app's main curve is a descriptive power-law fit to the five entered
@@ -84,6 +96,15 @@ and colleagues, Jones and colleagues, and Poole and colleagues papers
 provide background on the critical-power concept and its interpretation.
 The app's multi-test field protocol is not the same as the validated
 3-min all-out protocol studied by Vanhatalo and colleagues.
+
+For running, the app fits the same log-log curve to speed (distance
+divided by time) and estimates critical speed (CS) and D′ with a
+distance-versus-time linear fit on the same 4 tests. Hughson and
+colleagues applied the critical-velocity approach to treadmill running,
+and Smyth and Muniz-Pumares estimated CS from recreational runners'
+training data. Kennelly, Riegel, and Péronnet and Thibault all used
+running records in their models. The app does not convert running
+results to power.
 
 ## Limits of what this bibliography establishes
 
