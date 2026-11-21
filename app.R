@@ -299,17 +299,28 @@ empty_history <- function() {
 build_example_upload_csv <- function() {
   tibble(
     athlete_name = "Sample Athlete",
-    test_date = as.Date("2026-03-02"),
-    power_45s = 620,
-    power_3min = 410,
-    power_6min = 360,
-    power_10min = 330,
-    power_20min = 295,
-    ergometer_type = "Concept2 BikeErg",
+    test_date = as.Date(c("2026-03-02", "2026-03-16")),
+    sport = c("Ergometer", "Running"),
+    power_45s = c(620, NA),
+    power_3min = c(410, NA),
+    power_6min = c(360, NA),
+    power_10min = c(330, NA),
+    power_20min = c(295, NA),
+    distance_45s_m = c(NA, 270),
+    distance_3min_m = c(NA, 870),
+    distance_6min_m = c(NA, 1610),
+    distance_10min_m = c(NA, 2580),
+    distance_20min_m = c(NA, 4990),
+    distance_unit = c(NA, "km"),
+    ergometer_type = c("Concept2 BikeErg", NA),
+    run_setting = c(NA, "Track"),
     protocol_confirmed = TRUE,
     test_validity_flag = "Complete",
-    context_flags = "Poor sleep",
-    notes = "Example row. Replace with your own values. Separate multiple context flags with a semicolon."
+    context_flags = c("Poor sleep", "Wind"),
+    notes = c(
+      "Example ergometer row. Replace with your own values. Separate multiple context flags with a semicolon.",
+      "Example running row. Distances are always in meters; distance_unit only sets how pace and distances are shown."
+    )
   )
 }
 
@@ -1502,7 +1513,7 @@ ui <- navbarPage(
         checkboxGroupInput(
           "context_flags",
           "Did anything affect this testing block? (optional)",
-          choices = names(context_flag_levels)
+          choices = context_flags_for("Ergometer")
         ),
         textAreaInput("notes", "Notes (optional)", rows = 3, placeholder = "Anything else worth recording about this block"),
         selectInput(
@@ -2170,7 +2181,7 @@ server <- function(input, output, session) {
       "power_duration_example_upload.csv"
     },
     content = function(file) {
-      write_csv(build_example_upload_csv(), file)
+      write_csv(build_example_upload_csv(), file, na = "")
     }
   )
 

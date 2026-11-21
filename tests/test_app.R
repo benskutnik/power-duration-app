@@ -170,7 +170,9 @@ check("Download then upload recomputes the same results",
 example_path <- tempfile(fileext = ".csv")
 write_csv(build_example_upload_csv(), example_path)
 example <- read_history_csv(example_path)
-check("Example CSV uploads", nrow(example$history) == 1 && example$history$context_flags == "Poor sleep")
+check("Example CSV uploads, with one ergometer row and one running row",
+      nrow(example$history) == 2 && setequal(example$history$sport, c("Ergometer", "Running")) &&
+        example$history$context_flags[example$history$sport == "Running"] == "Wind")
 
 upload <- function(lines, slash_order = "auto") {
   path <- tempfile(fileext = ".csv")
@@ -224,6 +226,128 @@ check("Duplicate athlete and start date: upload rejected", is.character(r) && gr
 
 r <- upload(c("athlete_name,test_date,power_45s", "Sam,2026-03-02,600"))
 check("Missing required columns: upload rejected", is.character(r) && grepl("missing required columns", r))
+
+# ------------------------------
+# Running (D-020 to D-022)
+# ------------------------------
+
+# A one-row running entry. Distances are in meters, as stored.
+run_entry <- function(d, name = "Sam", date = "2026-03-02", setting = "", unit = "m",
+                      flag = "Complete", protocol = TRUE, flags = "") {
+  tibble(
+    athlete_name = name, test_date = as.Date(date), sport = "Running",
+    distance_45s_m = d[1], distance_3min_m = d[2], distance_6min_m = d[3],
+    distance_10min_m = d[4], distance_20min_m = d[5], distance_unit = unit,
+    notes = "", run_setting = setting, protocol_confirmed = protocol,
+    test_validity_flag = flag, context_flags = flags
+  )
+}
+
+run_typical <- c(270, 870, 1610, 2580, 4990)
+speed_10min <- run_typical[4] / 600
+
+check("Pace: 4.0 m/s is 4:10 /km, and 8:00 /mi converts correctly",
+      format_pace(4.0) == "4:10 /km" && format_pace(1609.344 / 480, "mi") == "8:00 /mi")
+
+v <- validate_test_values(run_entry(run_typical))
+check("Running: typical profile has no retest signal", v$retest_level == "No retest signal")
+
+v <- validate_test_values(run_entry(c(run_typical[1:4], speed_10min * 1.01 * 1200)))
+check("Running: 20 min 1% faster than 10 min is a small reversal, kept with caution",
+      !v$outputs_withheld && "small_reversal" %in% v$flags && grepl("/km", paste(v$warnings, collapse = " ")))
+
+v <- validate_test_values(run_entry(c(run_typical[1:4], speed_10min * 1.03 * 1200)))
+check("Running: 20 min 3% faster than 10 min withholds outputs",
+      v$outputs_withheld && v$has_pattern_block && "order_violation" %in% v$flags)
+
+v <- validate_test_values(run_entry(run_typical / 10))
+check("Running: 20 min distance under 1,000 m is a hard error", length(v$errors) == 1)
+
+v <- validate_test_values(run_entry(c(run_typical[1:4], 9000)))
+check("Running: 20 min distance over 8,000 m is a hard error", length(v$errors) == 1)
+
+v <- validate_test_values(run_entry(c(600, run_typical[2:5])))
+check("Running: 45 s more than 2x as fast as 3 min is a suspected entry error",
+      v$has_pattern_block && "suspected_entry_error" %in% v$flags)
+
+v <- validate_test_values(run_entry(c(run_typical[1:4], speed_10min * 0.85 * 1200)))
+check("Running: 15% speed drop from 10 to 20 min is a steep-decline warning", "steep_decline" %in% v$flags)
+
+v <- validate_test_values(run_entry(c(270, 870, 1610, 2590, 5000)))
+check("Running: no near-flat warning", !("near_flat" %in% v$flags))
+
+v <- validate_test_values(run_entry(run_typical, flags = "Wind"))
+check("Running: Wind flag means retest suggested", v$retest_level == "Retest suggested")
+
+run_record <- recompute_history_record(run_entry(run_typical, unit = "km", setting = "Track"))
+check("Running record: CS, D', and predicted speeds filled; power columns empty",
+      run_record$estimated_cs_m_per_s > 3.5 && run_record$estimated_cs_m_per_s < 4.5 &&
+        run_record$estimated_d_prime_m > 0 && !is.na(run_record$predicted_speed_4min_m_per_s) &&
+        is.na(run_record$power_45s) && is.na(run_record$estimated_cp) &&
+        is.na(run_record$predicted_power_4min) && run_record$distance_unit == "km")
+
+ergo_record <- recompute_history_record(entry(typical))
+check("Ergometer record: running columns empty, sport set",
+      ergo_record$sport == "Ergometer" && is.na(ergo_record$distance_45s_m) &&
+        is.na(ergo_record$estimated_cs_m_per_s) && !is.na(ergo_record$estimated_cp))
+
+both <- upsert_history_record(upsert_history_record(empty_history(), ergo_record), run_record)
+check("Same athlete and date in both sports: 2 separate records", nrow(both) == 2)
+
+run_history <- recompute_uploaded_history(bind_rows(
+  make_profile_record(entry(typical, date = "2026-01-05"), validate_test_values(entry(typical))),
+  make_profile_record(run_entry(run_typical, date = "2026-01-12", setting = "Track"),
+                      validate_test_values(run_entry(run_typical)))
+))
+b <- find_baseline(run_entry(run_typical, date = "2026-03-02", setting = "Track"), run_history)
+check("Running baseline: same sport and setting, skipping ergometer tests",
+      !is.null(b$baseline) && b$baseline$test_date == as.Date("2026-01-12"))
+
+b <- find_baseline(run_entry(run_typical, date = "2026-03-02", setting = "Outdoor (GPS watch)"), run_history)
+check("Running baseline: Track and Outdoor aren't comparable, so a note instead",
+      is.null(b$baseline) && grepl("compared by pace", b$note))
+
+b <- find_baseline(entry(typical, date = "2026-03-02"), run_history)
+check("Ergometer baseline ignores running tests",
+      !is.null(b$baseline) && b$baseline$test_date == as.Date("2026-01-05"))
+
+entered <- build_test_dataframe(list(
+  athlete_name = "Sam", test_date = as.Date("2026-03-02"), sport = "Running", distance_unit = "km",
+  distance_45s = 0.27, distance_3min = 0.87, distance_6min = 1.61, distance_10min = 2.58,
+  distance_20min = 4.99, power_45s = 620, notes = "", run_setting = "Not specified",
+  protocol_confirmed = TRUE, test_validity_flag = "Complete", context_flags = NULL
+))
+check("Entry form: km converted to meters, power ignored, Not specified stored blank",
+      entered$distance_20min_m == 4990 && is.na(entered$power_45s) && entered$run_setting == "")
+
+run_header <- "athlete_name,test_date,sport,distance_45s_m,distance_3min_m,distance_6min_m,distance_10min_m,distance_20min_m"
+
+csv_path <- tempfile(fileext = ".csv")
+write_history_csv(both, csv_path)
+round_trip <- read_history_csv(csv_path)
+check("Mixed-sport history: download then upload keeps both records",
+      nrow(round_trip$history) == 2 &&
+        isTRUE(all.equal(round_trip$history$estimated_cs_m_per_s, both$estimated_cs_m_per_s)))
+
+r <- upload(c(run_header, "Sam,2026-03-02,Running,270,870,1610,2580,4990"))
+check("Running row uploads, with distance_unit defaulting to m",
+      is.list(r) && r$history$sport == "Running" && r$history$distance_unit == "m")
+
+r <- upload(c(paste0(header, ",sport"), "Sam,2026-03-02,620,410,360,330,295,Ergometer", "Ann,2026-03-02,,,,,,Running"))
+check("Running rows need the distance columns",
+      is.character(r) && grepl("missing required columns: distance_45s_m", r))
+
+r <- upload(c(paste0(header, ",sport"), "Sam,2026-03-02,620,410,360,330,295,Rowing"))
+check("Unknown sport: upload rejected", is.character(r) && grepl("sport must be", r))
+
+r <- upload(c(paste0(run_header, ",distance_unit"), "Sam,2026-03-02,Running,270,870,1610,2580,4990,yards"))
+check("Unknown distance unit: upload rejected", is.character(r) && grepl("distance_unit", r))
+
+r <- upload(c(paste0(header, ",context_flags"), "Sam,2026-03-02,620,410,360,330,295,Wind"))
+check("Running-only flag on an ergometer row: upload rejected", is.character(r) && grepl("context_flags", r))
+
+r <- upload(c(paste0(run_header, ",run_setting"), "Sam,2026-03-02,Running,270,870,1610,2580,4990,track"))
+check("Running setting matched ignoring case", is.list(r) && r$history$run_setting == "Track")
 
 # ------------------------------
 # Server logic
