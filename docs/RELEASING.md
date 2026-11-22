@@ -44,7 +44,11 @@ The live app runs on Posit Connect Cloud, which redeploys automatically whenever
 
 1. Open the live app, refresh the page, and repeat a short version of the browser walkthrough. Check it on a phone too.
 2. Optional: on GitHub, draft a release with the tag `vX.Y.Z` on `main`, and paste in that version's changelog section.
-3. Post the update in Discord, as a reply to the original app post.
+3. Announce the update. Don't use @everyone in Discord; it's saved for new programs and product launches.
+   - **Every release users will notice:** in Discord #general, reply to the pinned post that starts "Power-duration app 1.3.0 is live." Open with the version number, list the changes users will notice (copy them from the changelog), and link the app directly.
+   - **Changes to running or testing:** post one line in Discord #building-the-base pointing to #general, and post a short version of the #general reply, with the app link, in the TrainHeroic Building the Base team chat. Skip the Phase 1 chat until Phase 1 uses the app.
+   - **Changes to what the app does or who it's for:** update the Power-duration app description on the Tools page (benskutnik.com/tools/).
+   - **New features (a minor version, such as 1.4.0):** optionally write a web-only post about it. It gets the usual distribution: Instagram story, Discord thread question, and LinkedIn.
 
 ## Undoing a release
 
