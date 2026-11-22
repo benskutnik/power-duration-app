@@ -1848,22 +1848,33 @@ server <- function(input, output, session) {
   # The unit the distance boxes currently show.
   shown_unit <- reactiveVal("m")
 
+  # Each converted box's shown value and its unrounded distance in meters.
+  # Converting back starts from the unrounded distance, so km to mi and back
+  # returns 4.99, not 4.9899.
+  converted_distances <- reactiveVal(list())
+
   # Distance labels show the chosen unit, such as "45 s distance (km)".
   # Switching units converts any entered distances, so 5 km becomes 3.1069 mi
   # instead of 5 mi.
   observeEvent(input$distance_unit, {
     from <- shown_unit()
     to <- input$distance_unit
+    remembered <- converted_distances()
     for (label in names(distance_input_ids)) {
       id <- distance_input_ids[[label]]
       value <- input_number(input[[id]])
       new_label <- paste0(label, " distance (", to, ")")
       if (from != to && !is.na(value)) {
-        updateNumericInput(session, id, label = new_label, value = convert_distance(value, from, to))
+        last <- remembered[[id]]
+        meters <- if (!is.null(last) && isTRUE(all.equal(last$shown, value))) last$meters else value * meters_per_unit[[from]]
+        shown <- convert_distance(meters, "m", to)
+        remembered[[id]] <- list(shown = shown, meters = meters)
+        updateNumericInput(session, id, label = new_label, value = shown)
       } else {
         updateNumericInput(session, id, label = new_label)
       }
     }
+    converted_distances(remembered)
     shown_unit(to)
   })
 
