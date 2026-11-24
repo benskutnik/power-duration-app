@@ -234,7 +234,7 @@ Decisions and their reasons go in this file. User-facing changes go in `CHANGELO
 
 ## D-019: Brand colors
 
-**Date:** 2026-10-30 | **Status:** Implemented (1.2.0)
+**Date:** 2026-10-30 | **Status:** Replaced by D-023 (1.4.0)
 
 The app uses the Ben Skutnik brand colors: black (#111111) on white, grays for secondary marks, one system font stack, and orange (#E4572E) as the only accent color. Orange marks estimated CP on Historical trends. The 5 test durations are grays, darkest for 45 s and lightest for 20 min, each labeled at its latest point.
 
@@ -342,3 +342,26 @@ Derived columns, recomputed on upload: `estimated_cs_m_per_s`, `estimated_d_prim
 **Why:** separate columns per sport keep watts and meters from mixing in one field. Ignoring the other sport's columns lets a hand-edited file with leftover values still upload its valid data, since a file the app exports never has them. Sport in the key follows the spec's one-sport-per-block assumption.
 
 **Changes:** D-010 (baseline adds sport and the running settings) and D-013 (key adds sport).
+
+## D-023: Brand look
+
+**Date:** 2026-11-24 | **Status:** Implemented (1.4.0)
+
+The app follows the Ben Skutnik brand as refreshed in November 2026.
+
+| Color | Use |
+| ----- | ----- |
+| #F4F4F4 paper | Page background, input boxes, the status bar, the extrapolated band on the profile chart |
+| #FFFFFF white | The sheet each tab's content sits on |
+| #111111 black | Text |
+| #6D2838 oxblood | Buttons, radio buttons, checkboxes, tab names, the wordmark |
+| #12566A teal | The main data series: the fitted curve and test points, the current test in the shape comparison, estimated CP or CS on trends |
+| #8A8A8A and darker grays | Comparison lines, the extrapolated curve, the 5 test durations on trends, outlines |
+
+Type is Franklin Gothic URW from the benskutnik.com Adobe Fonts web project, with system fonts as the fallback. Charts are drawn on the server, which doesn't have Franklin, so chart text uses the default sans. Corners are square. Tables use rules only. The green and amber status boxes keep their colors, since those colors carry meaning.
+
+**Why:** the brand was rebuilt in November 2026 so it no longer reads as AI-generated. The old look (black, white, one orange accent, a system font, rounded cards) matched common generated designs. Oxblood marks controls and teal marks data, so the 2 never compete as accents.
+
+**Review:** carried over from D-019. CP is a secondary metric. If feedback shows the teal CP line pulls attention from the tested results, make the 5 durations a teal ramp and CP a gray dashed line.
+
+**Replaces:** D-019.

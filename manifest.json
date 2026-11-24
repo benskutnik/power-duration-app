@@ -2353,16 +2353,73 @@
   },
   "files": {
     "app.R": {
-      "checksum": "6519ca6869dd26c29eef183edc80185b"
+      "checksum": "58def78489b7f9fb569f93eebd65bbf4"
+    },
+    "CHANGELOG.md": {
+      "checksum": "782a6bf98ab93080a2e897d4243017de"
+    },
+    "docs/01_project_definition_memo.md": {
+      "checksum": "e8a3829a2a9fcc5929b1f84cc00f68e7"
+    },
+    "docs/02_non_negotiables_memo.md": {
+      "checksum": "20e14917a3e38c51b1e1542e837075ab"
+    },
+    "docs/03_scientific_guardrails_memo.md": {
+      "checksum": "d506ce018591e2cb648dc21d090c786c"
+    },
+    "docs/04_information_architecture.md": {
+      "checksum": "50c8e6587cb51f42ff8a65cbfd4df922"
+    },
+    "docs/05_data_schema.md": {
+      "checksum": "572d010cf904945ea6b418ca462d685d"
+    },
+    "docs/06_training_targets.md": {
+      "checksum": "0d17968d8cc938534713017a41313fc5"
+    },
+    "docs/07_quality_control_system_design.md": {
+      "checksum": "9224c586b79625f861ba22ab4c9271b8"
+    },
+    "docs/08_shiny_app_architecture_plan.md": {
+      "checksum": "c8ea5a456660a4fee445e007f19150a4"
+    },
+    "docs/10_master_build_spec.md": {
+      "checksum": "7b85ff2fe93122c9326ebac7de8bbf41"
+    },
+    "docs/DECISIONS.md": {
+      "checksum": "d9a5c57a33b2f74adfec822ed7072ad1"
+    },
+    "docs/power_duration_app_bibliography.md": {
+      "checksum": "f93a4145b55f1eecbbc0eea8175f54cb"
+    },
+    "docs/power_duration_app_blueprint.md": {
+      "checksum": "46b84d2b438b8c0a71c20185155a0ea2"
+    },
+    "docs/RELEASING.md": {
+      "checksum": "c18b8ee896f9a9df409b2a0f944701e6"
+    },
+    "docs/resolved_v1_spec.md": {
+      "checksum": "c5917e5d6dffd5735a070f5f7d003474"
+    },
+    "docs/running_mode_spec.md": {
+      "checksum": "53e86517ad09f370921516bc690b4a5c"
+    },
+    "example_upload.csv": {
+      "checksum": "a735e776ffd54b16f507ef8adf755801"
+    },
+    "README.md": {
+      "checksum": "ad17456164602ff8e30187fff7517fdf"
+    },
+    "tests/test_app.R": {
+      "checksum": "4bf07c27017a0e01e422a634fa51bb26"
     },
     "www/apple-touch-icon.png": {
-      "checksum": "3d33aaeb49c2bc6e7113603f6fa45843"
+      "checksum": "d65ad641c65924d1250cf10c2caabba9"
     },
-    "www/ben-skutnik-logo-light.svg": {
-      "checksum": "a4e9dc95fb693e78ef0cbcc2e0306aaf"
+    "www/ben-skutnik-wordmark-oxblood.svg": {
+      "checksum": "96990f9b3b8262458f1660bd0aff30aa"
     },
     "www/favicon-48.png": {
-      "checksum": "f22b2ab991b36757247b956588126d9e"
+      "checksum": "8737cc3477baa833f5e83d3416e72579"
     }
   },
   "users": null

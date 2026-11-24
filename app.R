@@ -1,7 +1,7 @@
 
 # app.R
 # Power-Duration Relationship App
-# Version 1.3.0. See CHANGELOG.md for changes and docs/DECISIONS.md for the
+# Version 1.4.0. See CHANGELOG.md for changes and docs/DECISIONS.md for the
 # reasoning behind the rules in this file.
 
 # ------------------------------
@@ -17,8 +17,8 @@ library(DT)
 library(bslib)
 library(ggrepel)
 
-# Footer link. Change it here when the site moves to benskutnik.com.
-site_url <- "https://benskutnik.ghost.io/?ref=power-duration-app"
+# Footer link.
+site_url <- "https://benskutnik.com/?ref=power-duration-app"
 
 # ------------------------------
 # Global constants
@@ -1601,25 +1601,68 @@ ui <- navbarPage(
     version = 5,
     bg = "#FFFFFF",
     fg = "#111111",
-    primary = "#111111",
+    primary = "#6D2838",
+    # Franklin Gothic URW from the benskutnik.com Adobe Fonts web project,
+    # loaded in the header below. The system fonts are the fallback.
     base_font = font_collection(
-      "system-ui", "-apple-system", "Segoe UI", "Roboto",
+      "franklin-gothic-urw", "system-ui", "-apple-system", "Segoe UI",
       "Helvetica Neue", "Arial", "sans-serif"
-    )
+    ),
+    "headings-font-weight" = 700,
+    "border-radius" = "0",
+    "border-radius-sm" = "0",
+    "border-radius-lg" = "0"
   ),
-    header = tags$head(
+  header = tags$head(
     tags$link(rel = "icon", href = "favicon-48.png"),
     tags$link(rel = "apple-touch-icon", href = "apple-touch-icon.png"),
+    tags$link(rel = "stylesheet", href = "https://use.typekit.net/lvf3qiv.css"),
     tags$style(HTML("
+      /* Page: paper ground, with each tab's content on one white sheet. */
+      body { background-color: #F4F4F4; }
+      .navbar.navbar-default { --bslib-navbar-default-bg: #F4F4F4; background-color: #F4F4F4 !important; border: 0; border-bottom: 1px solid #8A8A8A; padding-bottom: 0; }
+      .navbar-brand { font-weight: 700; font-size: 1.6rem; color: #111111 !important; }
+      .navbar .nav-link { color: #6D2838 !important; padding: 0.5rem 1rem !important; border: 1px solid transparent; border-bottom: 0; }
+      .navbar .nav-link.active { background-color: #FFFFFF; border-color: #8A8A8A; color: #111111 !important; margin-bottom: -1px; }
+      .tab-content { background-color: #FFFFFF; border: 1px solid #8A8A8A; border-top: 0; padding: 24px 32px 32px; }
+      h3 { font-size: 1.4rem; margin-top: 1.5rem; }
+      h4 { font-size: 1.1rem; margin-top: 1.25rem; }
+      h3:first-child, h4:first-child { margin-top: 0; }
+
+      /* Sidebar: no box of its own. */
+      .well { background-color: transparent; border: 0; box-shadow: none; padding: 0 24px 0 0; }
+
+      /* Inputs: filled boxes with a gray outline, like the PDF's log boxes. */
+      .form-control, .form-select, .selectize-input { background-color: #F4F4F4 !important; border: 1px solid #8A8A8A; box-shadow: none; }
+      .selectize-dropdown { border: 1px solid #8A8A8A; }
+      .control-label, .form-label { font-weight: 700; }
+      .btn-default:not(.btn-primary) { background-color: #FFFFFF; border: 1px solid #8A8A8A; color: #111111; }
+
+      /* Tables: rules only, no stripes or boxes. */
+      .table { --bs-table-striped-bg: transparent; --bs-table-bg: transparent; }
+      .table > :not(caption) > * > * { border-width: 0 0 1px 0; border-color: #E2E2E2; padding: 0.45rem 0.75rem 0.45rem 0; }
+      .table > thead > tr > th { border-bottom: 1px solid #111111; color: #666666; font-weight: 700; }
+      .table-bordered > :not(caption) > * { border-width: 0; }
+      table.dataTable > tbody > tr:not(.selected) > * { box-shadow: none !important; }
+
+      /* Save and upload messages: white with a gray outline. Warnings and errors keep their colors. */
+      .shiny-notification-message { background-color: #FFFFFF; border: 1px solid #8A8A8A; color: #111111; box-shadow: none; }
+
       .site-footer { margin: 40px 0 24px; text-align: center; font-size: 13px; }
       .site-footer a { display: inline-flex; align-items: center; gap: 8px; color: #666666; text-decoration: none; }
       .site-footer a:hover { color: #111111; }
       .table-scroll { overflow-x: auto; }
       .shiny-output-error-validation { margin-bottom: 1rem; }
       #training_targets_table table { min-width: 720px; }
-            table.dataTable tbody tr.selected > * {
+      table.dataTable tbody tr.selected > * {
         box-shadow: inset 0 0 0 9999px #111111 !important;
-        color: #ffffff !important;
+        color: #FFFFFF !important;
+      }
+
+      @media (max-width: 767px) {
+        .tab-content { padding: 20px 16px; }
+        .well { padding: 0; }
+        .navbar .nav-link.active { margin-bottom: 0; }
       }
     "))
   ),
@@ -1628,8 +1671,8 @@ ui <- navbarPage(
     tags$a(
       href = site_url,
       target = "_blank",
-      tags$img(src = "ben-skutnik-logo-light.svg", alt = "", height = 24),
-      "Made by Ben Skutnik"
+      "Made by",
+      tags$img(src = "ben-skutnik-wordmark-oxblood.svg", alt = "Ben Skutnik", height = 14)
     )
   ),
 
@@ -1936,7 +1979,7 @@ server <- function(input, output, session) {
     }
 
     tags$div(
-      style = "padding:10px; background-color:#f4f6f8; border:1px solid #d8dee4; margin-bottom:15px;",
+      style = "padding:10px; background-color:#F4F4F4; border:1px solid #8A8A8A; margin-bottom:15px;",
       tags$strong(paste0(n_entered, " of 5 test results entered. ")),
       next_action
     )
@@ -2049,7 +2092,7 @@ server <- function(input, output, session) {
         "rect",
         xmin = longest_test_sec, xmax = Inf,
         ymin = -Inf, ymax = Inf,
-        fill = "gray92"
+        fill = "#F4F4F4"
       ) +
       annotate(
         "text",
@@ -2058,24 +2101,26 @@ server <- function(input, output, session) {
         label = "Extrapolated\nbeyond 20 min",
         vjust = 1.5,
         size = 3.5,
-        color = "gray40"
+        color = "#666666"
       ) +
       geom_line(
         data = curve_tested,
         aes(x = duration_sec, y = pred_power_w),
-        linewidth = 1
+        linewidth = 1,
+        color = "#12566A"
       ) +
       geom_line(
         data = curve_extrapolated,
         aes(x = duration_sec, y = pred_power_w),
         linewidth = 1,
         linetype = "dashed",
-        color = "gray45"
+        color = "#8A8A8A"
       ) +
       geom_point(
         data = profile_df,
         aes(x = duration_sec, y = power_w),
-        size = 3
+        size = 3,
+        color = "#12566A"
       ) +
       geom_text_repel(
         data = label_df,
@@ -2557,7 +2602,7 @@ server <- function(input, output, session) {
       geom_line(data = curves_df, aes(x = duration_sec, y = pred_power_w, color = test), linewidth = 1) +
       geom_point(data = points_df, aes(x = duration_sec, y = power_w, color = test), size = 3) +
       scale_color_manual(
-        values = setNames(c("#8A8A8A", "#111111"), test_levels),
+        values = setNames(c("#8A8A8A", "#12566A"), test_levels),
         breaks = c("Current", baseline_label)
       ) +
       scale_x_log10(
@@ -2600,16 +2645,16 @@ server <- function(input, output, session) {
       arrange(desc(test_date)) %>%
       slice(1)
 
-    # One gray per test duration, darkest for 45 s, and orange for
-    # estimated CP or CS, the chart's one orange mark.
+    # One gray per test duration, darkest for 45 s, and teal for
+    # estimated CP or CS, the chart's one colored line (D-023).
     trend_colors <- c(
       "45 s" = "#111111",
       "3 min" = "#333333",
       "6 min" = "#555555",
       "10 min" = "#707070",
       "20 min" = "#8A8A8A",
-      "Estimated CP" = "#E4572E",
-      "Estimated CS" = "#E4572E"
+      "Estimated CP" = "#12566A",
+      "Estimated CS" = "#12566A"
     )
 
     # Label each line at its most recent point instead of using a legend.

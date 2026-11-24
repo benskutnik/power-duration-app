@@ -2,6 +2,16 @@
 
 User-facing changes to the Power-Duration App.
 
+## 1.4.0 (2026-11-24)
+
+### Changed
+
+- The app has a new look that matches Ben Skutnik's refreshed brand: a light paper background with each tab's content on one white sheet, Franklin Gothic URW type, filled input boxes with square corners, and tables with plain rules instead of stripes and borders.
+- Buttons, radio buttons, checkboxes, and tab names are oxblood instead of black.
+- On the profile chart, the fitted curve and test points are teal. On the profile shape comparison, the current test is teal and the previous test gray. On Historical trends, estimated CP or CS is teal instead of orange.
+- The status bar on Current test entry and the save message use the new colors. The green and amber status boxes keep their colors.
+- The "Made by" link at the bottom shows the new Ben Skutnik wordmark and goes to benskutnik.com. The browser tab shows the new b icon.
+
 ## 1.3.0 (2026-11-21)
 
 ### Added
